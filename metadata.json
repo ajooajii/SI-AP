@@ -1,0 +1,6 @@
+{
+  "name": "SI-AP Bandar Lampung",
+  "description": "Aplikasi digital Dinas Lingkungan Hidup Kota Bandar Lampung untuk monitoring ritase, armada, personil, dan operasional pengangkutan sampah secara terintegrasi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

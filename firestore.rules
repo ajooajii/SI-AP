@@ -1,0 +1,249 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      let email = (request.auth != null && request.auth.token != null && request.auth.token.email != null ? request.auth.token.email : "").lower();
+      let isInternal = email.endsWith('ritase.dlh') || email == 'bpsdlh@gmail.com';
+      let verified = request.auth != null && request.auth.token != null && request.auth.token.email_verified == true;
+      
+      // Fallback: if user doc exists, they are considered verified for our app logic
+      let hasProfile = request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      
+      return isSignedIn() && (verified || isInternal || hasProfile);
+    }
+
+    // Comprehensive helper for privileged roles
+    function isAdminOrCoAdmin() {
+      let authEmail = (request.auth != null && request.auth.token != null && request.auth.token.email != null ? request.auth.token.email : "").lower();
+      // Identity check: prioritize root emails
+      let isRoot = authEmail == "bpsdlh@gmail.com" || authEmail == "bpsdlh@ritase.dlh";
+      
+      // Role check from database
+      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      let hasDoc = exists(userDocPath);
+      let dbRole = hasDoc ? get(userDocPath).data.get('role', '') : '';
+      let hasPrivilegedRole = dbRole == 'admin' || dbRole == 'co-admin';
+      
+      return isSignedIn() && (isRoot || hasPrivilegedRole);
+    }
+
+    function isAdmin() {
+      let authEmail = (request.auth != null && request.auth.token != null && request.auth.token.email != null ? request.auth.token.email : "").lower();
+      let isRoot = authEmail == "bpsdlh@gmail.com" || authEmail == "bpsdlh@ritase.dlh";
+      
+      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      let hasAdminDoc = exists(userDocPath);
+      let dbRole = hasAdminDoc ? get(userDocPath).data.get('role', '') : '';
+      
+      return isSignedIn() && (isRoot || dbRole == 'admin');
+    }
+
+    function isCoAdmin() {
+      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      let hasDoc = exists(userDocPath);
+      let dbRole = hasDoc ? get(userDocPath).data.get('role', '') : '';
+      
+      return isSignedIn() && dbRole == 'co-admin';
+    }
+
+    function canManageData() {
+      return isAdminOrCoAdmin();
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Validation Functions ---
+
+    function isValidUser(data) {
+      let requiredFields = ['userId', 'username', 'email', 'role', 'account_name', 'status'];
+      return data.keys().hasAll(requiredFields) &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.username is string && data.username.size() > 0 &&
+             data.email is string && data.email.size() > 0 &&
+             data.role in ['admin', 'co-admin', 'user'] &&
+             data.account_name is string && data.account_name.size() > 0 &&
+             data.status in ['active', 'inactive'] &&
+             (!('operator_name' in data) || data.operator_name is string) &&
+             (!('assigned_upt_id' in data) || data.assigned_upt_id is string) &&
+             (!('assigned_upt_name' in data) || data.assigned_upt_name is string);
+    }
+
+    function isValidTrip(data) {
+      // Basic keys required for any trip
+      let requiredFields = ['date', 'vehiclePlate', 'driverName', 'upt', 'tpa', 'tonnage', 'volume', 'tripCount', 'createdBy', 'timestamp', 'created_by_upt_id', 'created_by_upt_name', 'created_by_user_name', 'created_by_username'];
+      let isUpdate = resource != null;
+      
+      let hasRequired = isUpdate || data.keys().hasAll(requiredFields);
+      
+      return hasRequired && 
+             (isUpdate || (
+               data.date is string &&
+               data.vehiclePlate is string &&
+               data.driverName is string &&
+               data.upt is string &&
+               data.tpa is string &&
+               (data.tonnage is number || data.tonnage is int) &&
+               (data.volume is number || data.volume is int) &&
+               (data.tripCount is int || data.tripCount is number) &&
+               data.created_by_upt_id is string &&
+               data.created_by_upt_name is string &&
+               data.created_by_user_name is string &&
+               data.created_by_username is string
+             )) && (
+               isUpdate ? (
+                 data.createdBy == existing().createdBy &&
+                 data.timestamp == existing().timestamp
+               ) : (
+                 data.createdBy == request.auth.uid &&
+                 data.timestamp == request.time
+               )
+             );
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll(['mainTpaId', 'isTpaLocked']) &&
+             data.mainTpaId is string &&
+             data.isTpaLocked is bool &&
+             (!('visualDataRitase' in data) || data.visualDataRitase is bool) &&
+             (!('enableWeight' in data) || data.enableWeight is bool) &&
+             (!('showWeightInForm' in data) || data.showWeightInForm is bool) &&
+             (!('showVolume' in data) || data.showVolume is bool);
+    }
+
+    function isValidActivityLog(data) {
+      let requiredFields = ['timestamp', 'category', 'action', 'module', 'performedBy', 'description'];
+      return data.keys().hasAll(requiredFields) &&
+             data.category in ['login', 'operasional', 'perubahan_data', 'sistem'] &&
+             (data.performedBy is map && data.performedBy.userId == request.auth.uid) &&
+             (data.timestamp == request.time || data.timestamp is timestamp);
+    }
+
+    function isValidTPS(data) {
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() <= 200;
+    }
+
+    function isValidVehicle(data) {
+      return data.keys().hasAll(['plateNumber', 'type']) &&
+             data.plateNumber is string && data.plateNumber.size() <= 20 &&
+             data.type is string &&
+             (!('status' in data) || data.status in ['Aktif', 'Tidak Aktif']) &&
+             (!('status_description' in data) || data.status_description is string) &&
+             (!('bbm' in data) || data.bbm is string) &&
+             (!('tahun_pengadaan' in data) || (data.tahun_pengadaan is number || data.tahun_pengadaan is int || data.tahun_pengadaan == null)) &&
+             (!('nomor_rangka' in data) || data.nomor_rangka is string) &&
+             (!('nomor_mesin' in data) || data.nomor_mesin is string) &&
+             (!('upts' in data) || data.upts is list) &&
+             (!('defaultDriverName' in data) || data.defaultDriverName is string) &&
+             (!('ritaseTonnage' in data) || data.ritaseTonnage is map);
+    }
+
+    function isValidDriver(data) {
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() <= 100 &&
+             (!('jabatan' in data) || data.jabatan is string) &&
+             (!('status_asn' in data) || data.status_asn is string) &&
+             (!('nip' in data) || (data.nip is string || data.nip == null)) &&
+             (!('phone' in data) || data.phone is string) &&
+             (!('shift' in data) || data.shift is string) &&
+             (!('upts' in data) || data.upts is list) &&
+             (!('vehiclePlate' in data) || data.vehiclePlate is string);
+    }
+
+    // --- Match Rules ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || canManageData());
+      allow list: if canManageData();
+      
+      allow create: if isSignedIn() && (request.auth.uid == userId || canManageData()) && 
+                    isValidUser(incoming());
+      
+      allow update: if isSignedIn() && (request.auth.uid == userId || canManageData()) && 
+                    isValidUser(incoming()) &&
+                    (incoming().username == existing().username) &&
+                    (canManageData() || (incoming().role == existing().role && incoming().status == existing().status));
+      allow delete: if isAdmin();
+    }
+
+    match /upts/{uptId} {
+      allow read: if isSignedIn();
+      allow write: if canManageData();
+    }
+
+    match /vehicles/{vehicleId} {
+      allow read: if isSignedIn();
+      allow create: if canManageData() && isValidVehicle(incoming());
+      allow update: if canManageData() && isValidVehicle(incoming());
+      allow delete: if isAdminOrCoAdmin();
+    }
+
+    match /drivers/{driverId} {
+      allow read: if isSignedIn();
+      allow create: if canManageData() && isValidDriver(incoming());
+      allow update: if canManageData() && isValidDriver(incoming());
+      allow delete: if isAdminOrCoAdmin();
+    }
+
+    match /tpas/{tpaId} {
+      allow read: if isSignedIn();
+      allow write: if canManageData();
+    }
+
+    match /tps/{tpsId} {
+      allow read: if isSignedIn();
+      allow write: if canManageData();
+    }
+
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if canManageData() && isValidSettings(incoming());
+    }
+
+    match /activity_logs/{logId} {
+      allow list: if isAdmin();
+      allow get: if isAdmin();
+      allow create: if isSignedIn() && isValidActivityLog(incoming());
+      allow update, delete: if false;
+    }
+
+    match /trips/{tripId} {
+      allow read: if isSignedIn();
+      
+      allow create: if isVerified() && isValidTrip(incoming()) && (
+        isAdminOrCoAdmin() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'user' &&
+         (incoming().upt == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('assigned_upt_name', '') ||
+          incoming().created_by_upt_name == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('assigned_upt_name', '')))
+      );
+      
+      // Admin/Co-admin can update trips
+      allow update: if isAdminOrCoAdmin() && isValidTrip(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasAny(['tonnage', 'volume', 'tripCount', 'updatedAt', 'syncAt', 'updatedBy', 'timestamp', 'upt', 'tpa', 'driverName', 'vehiclePlate', 'date', 'operationalTime'])
+      );
+                    
+      allow delete: if isAdminOrCoAdmin();
+    }
+  }
+}

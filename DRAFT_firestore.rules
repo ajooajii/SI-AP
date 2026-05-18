@@ -1,0 +1,148 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Relaxed verified check for the transition/preview period
+    // Ensuring primary admin emails are always allowed if signed in
+    function isVerified() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true || 
+        request.auth.token.firebase.sign_in_provider == 'password' ||
+        request.auth.token.email in ['bpsdlh@gmail.com', 'bpsdlh@ritase.dlh']
+      );
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Check if user is admin or co-admin
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email in ['bpsdlh@gmail.com', 'bpsdlh@ritase.dlh'] ||
+        getUserData().role == 'admin'
+      );
+    }
+
+    function isCoAdmin() {
+      return isSignedIn() && getUserData().role == 'co-admin';
+    }
+
+    function canManageData() {
+      return isAdmin() || isCoAdmin();
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Validation Functions ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['userId', 'email', 'role']) &&
+             data.userId is string &&
+             data.email is string &&
+             data.role in ['admin', 'co-admin', 'user'];
+    }
+
+    function isValidTrip(data) {
+      return data.keys().hasAll(['date', 'vehiclePlate', 'driverName', 'upt', 'tpa', 'tonnage', 'volume', 'tripCount', 'createdBy', 'timestamp']) &&
+             data.date is string &&
+             data.vehiclePlate is string && data.vehiclePlate.size() <= 20 &&
+             data.driverName is string && data.driverName.size() <= 100 &&
+             data.upt is string &&
+             data.tpa is string &&
+             (data.tonnage is number || data.tonnage is int) &&
+             (data.volume is number || data.volume is int) &&
+             data.tripCount is int &&
+             data.createdBy == request.auth.uid &&
+             // Handle create and update timestamps
+             (data.timestamp == request.time || data.timestamp == existing().timestamp);
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll(['mainTpaId', 'isTpaLocked']) &&
+             data.mainTpaId is string &&
+             data.isTpaLocked is bool;
+    }
+
+    function isValidTPS(data) {
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() <= 200;
+    }
+
+    // --- Match Rules ---
+
+    match /users/{userId} {
+      allow get: if isVerified();
+      allow list: if canManageData();
+      
+      // Allow a user to create their own initial profile
+      allow create: if isVerified() && request.auth.uid == userId && 
+                     isValidUser(incoming()) && 
+                     (incoming().role == 'user' || incoming().email in ['bpsdlh@gmail.com', 'bpsdlh@ritase.dlh']);
+      
+      allow update: if canManageData() && isValidUser(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /upts/{uptId} {
+      allow read: if isVerified();
+      allow write: if canManageData();
+    }
+
+    match /vehicles/{vehicleId} {
+      allow read: if isVerified();
+      allow write: if canManageData();
+    }
+
+    match /drivers/{driverId} {
+      allow read: if isVerified();
+      allow write: if canManageData();
+    }
+
+    match /tpas/{tpaId} {
+      allow read: if isVerified();
+      allow write: if canManageData();
+    }
+
+    match /tps/{tpsId} {
+      allow read: if isVerified();
+      allow write: if canManageData();
+    }
+
+    match /settings/{docId} {
+      allow read: if isVerified();
+      allow write: if canManageData() && isValidSettings(incoming());
+    }
+
+    match /trips/{tripId} {
+      allow get: if isVerified();
+      allow list: if isVerified();
+      
+      allow create: if isVerified() && isValidTrip(incoming());
+      
+      allow update: if canManageData() && isValidTrip(incoming()) && 
+                    (incoming().diff(existing()).affectedKeys().hasOnly(['tonnage', 'volume', 'tripCount', 'updatedAt', 'timestamp', 'upt', 'tpa', 'driverName', 'vehiclePlate', 'date']));
+                    
+      allow delete: if isAdmin();
+    }
+  }
+}

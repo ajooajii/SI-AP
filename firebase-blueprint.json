@@ -1,0 +1,215 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and role information with administrative metadata.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "username": { "type": "string", "description": "Immutable account username" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "co-admin", "user"] },
+        "assigned_upt_id": { "type": "string", "description": "Assigned UPT Document ID" },
+        "assigned_upt_name": { "type": "string", "description": "Assigned UPT Display Name" },
+        "account_name": { "type": "string", "description": "Display name of the account/entity" },
+        "operator_name": { "type": "string", "description": "Name of the person operating the account" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "username", "email", "role", "account_name", "status"]
+    },
+    "Trip": {
+      "title": "Trip (Ritase)",
+      "description": "Record of a single vehicle trip.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "vehiclePlate": { "type": "string" },
+        "driverName": { "type": "string" },
+        "upt": { "type": "string" },
+        "tpa": { "type": "string" },
+        "volume": { "type": "number", "description": "Waste volume in cubic meters" },
+        "tonnage": { "type": "number", "description": "Waste weight in tons" },
+        "tripCount": { "type": "integer" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "created_by_upt_id": { "type": "string", "description": "UPT ID of the input source" },
+        "created_by_upt_name": { "type": "string", "description": "UPT Name of the input source" },
+        "created_by_user_name": { "type": "string", "description": "Name of the user who input the data" },
+        "created_by_username": { "type": "string", "description": "Username of the user who input the data" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "vehiclePlate", "driverName", "upt", "volume", "tripCount", "createdBy", "created_by_upt_id", "created_by_upt_name", "created_by_user_name", "created_by_username"]
+    },
+    "UPT": {
+      "title": "UPT",
+      "description": "Management Unit details with administrative metadata.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Firestore Document ID" },
+        "upt_id": { "type": "string", "description": "Formatted ID (e.g., UPT001)" },
+        "nama_upt": { "type": "string" },
+        "kode_pendek": { "type": "string" },
+        "penanggung_jawab": { "type": "string" },
+        "status_pimpinan": { "type": "string", "enum": ["PLT", "Definitif"] },
+        "area_polygon": { "type": "string", "description": "Polygon data for area mapping" },
+        "name": { "type": "string", "description": "Alias for nama_upt for compatibility" }
+      },
+      "required": ["id", "upt_id", "nama_upt", "kode_pendek", "status_pimpinan"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Garbage truck details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "plateNumber": { "type": "string" },
+        "type": { "type": "string", "enum": ["Motor Roda 3", "Arm Roll", "Dump Truck", "Pick Up"] },
+        "brand": { "type": "string" },
+        "status": { "type": "string", "enum": ["Aktif", "Tidak Aktif"], "description": "Operational status of the vehicle." },
+        "status_description": { "type": "string", "description": "Mandatory description if status is 'Tidak Aktif'." },
+        "upts": { "type": "array", "items": { "type": "string" }, "description": "Assigned UPTs for this vehicle." },
+        "defaultDriverName": { "type": "string", "description": "Name of the assigned main driver." },
+        "bbm": { "type": "string", "enum": ["Solar", "Bensin", "Listrik", "Lainnya"] },
+        "tahun_pengadaan": { "type": "integer" },
+        "nomor_rangka": { "type": "string" },
+        "nomor_mesin": { "type": "string" },
+        "ritaseTonnage": { 
+          "type": "object", 
+          "description": "Mapping of UPT names to their respective ritase tonnages.",
+          "additionalProperties": { 
+            "type": "object",
+            "additionalProperties": { "type": "number" }
+          }
+        }
+      },
+      "required": ["plateNumber", "type", "upts"]
+    },
+    "Driver": {
+      "title": "Driver",
+      "description": "Driver information.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "jabatan": { "type": "string", "enum": ["Supir", "Kenek", "Petugas", "Koordinator", "Lainnya"] },
+        "status_asn": { "type": "string", "enum": ["ASN", "PPPK", "PPPK Paruh Waktu", "Alih Daya"] },
+        "nip": { "type": "string" },
+        "upts": { "type": "array", "items": { "type": "string" }, "description": "Assigned UPTs for this driver." }
+      },
+      "required": ["name", "upts"]
+    },
+    "TPA": {
+      "title": "TPA (Landfill)",
+      "description": "Final disposal site information.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "location": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "TPS": {
+      "title": "TPS (Transfer Station)",
+      "description": "Temporary disposal site information.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "subDistrict": { "type": "string" },
+        "address": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "capacity": { "type": "string" },
+        "generation": { "type": "string" },
+        "location": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "GlobalSettings": {
+      "title": "Global Settings",
+      "description": "System-wide configuration.",
+      "type": "object",
+      "properties": {
+        "mainTpaId": { "type": "string", "description": "The ID of the default TPA destination" },
+        "isTpaLocked": { "type": "boolean", "description": "Whether the TPA selection is locked for users" },
+        "enableWeight": { "type": "boolean", "description": "Global toggle for tonnage/weight feature" },
+        "showWeightInForm": { "type": "boolean", "description": "Whether to show tonnage input field in the trip form" },
+        "showVolume": { "type": "boolean", "description": "Whether to show volume input field" }
+      }
+    },
+    "ActivityLog": {
+      "title": "Activity Log",
+      "description": "Audit trail record of system activities.",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "category": { "type": "string", "enum": ["login", "operasional", "perubahan_data", "sistem"] },
+        "action": { "type": "string" },
+        "module": { "type": "string" },
+        "recordId": { "type": "string" },
+        "recordLabel": { "type": "string" },
+        "performedBy": {
+          "type": "object",
+          "properties": {
+            "userId": { "type": "string" },
+            "username": { "type": "string" },
+            "operatorName": { "type": "string" },
+            "accountName": { "type": "string" },
+            "role": { "type": "string" },
+            "uptId": { "type": "string" },
+            "uptName": { "type": "string" }
+          }
+        },
+        "description": { "type": "string" },
+        "beforeData": { "type": "object" },
+        "afterData": { "type": "object" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["timestamp", "category", "action", "module", "performedBy", "description"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Authenticated users."
+    },
+    "/trips/{tripId}": {
+      "schema": "Trip",
+      "description": "Vehicle trip records."
+    },
+    "/upts/{uptId}": {
+      "schema": "UPT",
+      "description": "Available UPTs."
+    },
+    "/vehicles/{vehicleId}": {
+      "schema": "Vehicle",
+      "description": "Vehicle registry."
+    },
+    "/drivers/{driverId}": {
+      "schema": "Driver",
+      "description": "Driver registry."
+    },
+    "/tpas/{tpaId}": {
+      "schema": "TPA",
+      "description": "TPA registry."
+    },
+    "/tps/{tpsId}": {
+      "schema": "TPS",
+      "description": "TPS registry."
+    },
+    "/settings/global": {
+      "schema": "GlobalSettings",
+      "description": "Global application configuration."
+    },
+    "/activity_logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "System activity audit logs."
+    }
+  }
+}
