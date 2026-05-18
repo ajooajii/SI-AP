@@ -208,7 +208,7 @@ export async function exportAllDataToExcel(data: {
     "rute": "Rute",
     "tps": "TPS",
     "defaultTonnage": "Tonase Default",
-    "bbm": "BBM",
+    "do_bbm": "DO BBM (Liter/Hari)",
     "tahun_pengadaan": "Tahun Pengadaan",
     "nomor_rangka": "Nomor Rangka",
     "nomor_mesin": "Nomor Mesin",
