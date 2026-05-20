@@ -25,7 +25,10 @@ import {
   orderBy,
   limit,
   where,
-  deleteField
+  deleteField,
+  getAggregateFromServer,
+  count,
+  sum
 } from "firebase/firestore";
 import { auth, db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { UserProfile, TripRecord, UserRole, UPT_LIST, Vehicle, Driver, TPA, TPS, ActivityLog } from "./types";
@@ -627,6 +630,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [trips, setTrips] = useState<TripRecord[]>([]);
+  const [tripFilterRange, setTripFilterRange] = useState<{ start: string, end: string }>({
+    start: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+    end: format(endOfMonth(new Date()), 'yyyy-MM-dd')
+  });
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -638,6 +645,7 @@ export default function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [showAddTrip, setShowAddTrip] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [reportsCache, setReportsCache] = useState<any>(null);
 
   // Trigger Change Password if forced by Admin
   useEffect(() => {
@@ -761,36 +769,68 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    const tripsQuery = query(collection(db, "trips"), orderBy("date", "desc"), limit(10000));
+    // Filter trips by date range to save quota
+    const tripsQuery = query(
+      collection(db, "trips"), 
+      where("date", ">=", tripFilterRange.start),
+      where("date", "<=", tripFilterRange.end),
+      orderBy("date", "desc"), 
+      limit(2000)
+    );
+
     const unsubTrips = onSnapshot(tripsQuery, (snapshot) => {
       setTrips(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TripRecord)));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, "trips"));
+    }, (err) => {
+      if (err.message.includes("quota") || err.message.includes("limit")) {
+        setNotification({ type: 'error', message: "Batas kuota database tercapai. Data ritase mungkin tidak lengkap." });
+        return;
+      }
+      handleFirestoreError(err, OperationType.LIST, "trips");
+    });
 
     const unsubVehicles = onSnapshot(query(collection(db, "vehicles"), orderBy("plateNumber", "asc")), (snapshot) => {
       setVehicles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vehicle)));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, "vehicles"));
+    }, (err) => {
+      if (err.message.includes("quota") || err.message.includes("limit")) return;
+      handleFirestoreError(err, OperationType.LIST, "vehicles");
+    });
 
     const unsubDrivers = onSnapshot(query(collection(db, "drivers"), orderBy("name", "asc")), (snapshot) => {
       setDrivers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Driver)));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, "drivers"));
+    }, (err) => {
+      if (err.message.includes("quota") || err.message.includes("limit")) return;
+      handleFirestoreError(err, OperationType.LIST, "drivers");
+    });
 
     const unsubUpts = onSnapshot(query(collection(db, "upts"), orderBy("name", "asc")), (snapshot) => {
       setUpts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, "upts"));
+    }, (err) => {
+      if (err.message.includes("quota") || err.message.includes("limit")) return;
+      handleFirestoreError(err, OperationType.LIST, "upts");
+    });
 
     const unsubTpas = onSnapshot(query(collection(db, "tpas"), orderBy("name", "asc")), (snapshot) => {
       setTpas(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TPA)));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, "tpas"));
+    }, (err) => {
+      if (err.message.includes("quota") || err.message.includes("limit")) return;
+      handleFirestoreError(err, OperationType.LIST, "tpas");
+    });
 
     const unsubTps = onSnapshot(query(collection(db, "tps"), orderBy("name", "asc")), (snapshot) => {
       setTps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TPS)));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, "tps"));
+    }, (err) => {
+      if (err.message.includes("quota") || err.message.includes("limit")) return;
+      handleFirestoreError(err, OperationType.LIST, "tps");
+    });
 
     const unsubSettings = onSnapshot(doc(db, "settings", "global"), (snapshot) => {
       if (snapshot.exists()) {
         setSettings(snapshot.data());
       }
-    }, (err) => handleFirestoreError(err, OperationType.GET, "settings/global"));
+    }, (err) => {
+      if (err.message.includes("quota") || err.message.includes("limit")) return;
+      handleFirestoreError(err, OperationType.GET, "settings/global");
+    });
 
     let unsubUsers = () => {};
     if (profile?.role === 'admin' || profile?.role === 'co-admin') {
@@ -802,7 +842,10 @@ export default function App() {
         // Client-side sort as fallback if some fields are missing
         const sortedUsers = allUsers.sort((a, b) => (a.account_name || "").localeCompare(b.account_name || ""));
         setUsers(sortedUsers);
-      }, (err) => handleFirestoreError(err, OperationType.LIST, "users"));
+      }, (err) => {
+        if (err.message.includes("quota") || err.message.includes("limit")) return;
+        handleFirestoreError(err, OperationType.LIST, "users");
+      });
     }
 
     return () => { 
@@ -815,7 +858,7 @@ export default function App() {
       unsubTps();
       unsubSettings();
     };
-  }, [user, profile]);
+  }, [user, profile, tripFilterRange]);
 
   // UPT ID Migration Effect
   useEffect(() => {
@@ -1275,7 +1318,16 @@ export default function App() {
         <AnimatePresence mode="wait">
           {activeTab === "dashboard" && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <DashboardView trips={trips} profile={profile} upts={upts} tpas={tpas} settings={settings} onAddClick={() => setActiveTab("trips")} />
+              <DashboardView 
+                trips={trips} 
+                profile={profile} 
+                upts={upts} 
+                tpas={tpas} 
+                settings={settings} 
+                onAddClick={() => setActiveTab("trips")} 
+                tripFilterRange={tripFilterRange}
+                setTripFilterRange={setTripFilterRange}
+              />
             </motion.div>
           )}
           {activeTab === "input-ritase" && (
@@ -1306,6 +1358,8 @@ export default function App() {
                 vehicles={vehicles}
                 setActiveTab={setActiveTab}
                 users={users}
+                tripFilterRange={tripFilterRange}
+                setTripFilterRange={setTripFilterRange}
               />
             </motion.div>
           )}
@@ -1365,7 +1419,18 @@ export default function App() {
           )}
           {activeTab === "reports" && (profile?.role === 'admin' || profile?.role === 'co-admin') && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <ReportsView trips={trips} onNotify={notify} settings={settings} upts={upts} users={users} profile={profile} />
+              <ReportsView 
+                trips={trips} 
+                onNotify={notify} 
+                settings={settings} 
+                upts={upts} 
+                users={users} 
+                profile={profile} 
+                tripFilterRange={tripFilterRange}
+                setTripFilterRange={setTripFilterRange}
+                reportsCache={reportsCache}
+                setReportsCache={setReportsCache}
+              />
             </motion.div>
           )}
           {activeTab === "activity-log" && (profile?.role === 'admin') && (
@@ -2132,19 +2197,23 @@ function NavItem({ active, onClick, icon, label, isSub }: any) {
 
 function ExportCenterView({ profile, onNotify }: any) {
   const [isExporting, setIsExporting] = useState(false);
+  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
 
-  const fetchFullCollection = async (colName: string) => {
+  const fetchFullCollection = async (colName: string, filters: any[] = []) => {
     try {
-      const { getDocs, collection, query, orderBy } = await import("firebase/firestore");
+      const { getDocs, collection, query, orderBy, where } = await import("firebase/firestore");
       const { db } = await import("./lib/firebase");
       
-      let q = query(collection(db, colName));
+      let constraints: any[] = filters;
+      
       if (colName === 'trips') {
-        q = query(collection(db, colName), orderBy('date', 'desc'));
+        constraints.push(orderBy('date', 'desc'));
       } else if (colName === 'users') {
-        q = query(collection(db, colName), orderBy('name', 'asc'));
+        constraints.push(orderBy('name', 'asc'));
       }
       
+      const q = query(collection(db, colName), ...constraints);
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     } catch (error) {
@@ -2153,34 +2222,36 @@ function ExportCenterView({ profile, onNotify }: any) {
     }
   };
 
-  const handleExportAll = async () => {
-    if (!window.confirm("Ekspor seluruh database ke Excel? Proses ini akan mengambil SEMUA data dari server.")) return;
+  const handleExportCustomRange = async () => {
+    if (!startDate || !endDate) {
+      onNotify('error', 'Pilih rentang tanggal terlebih dahulu');
+      return;
+    }
     
     setIsExporting(true);
     try {
-      const [trips, drivers, vehicles, upts, tpas, tps, users] = await Promise.all([
-        fetchFullCollection('trips'),
-        fetchFullCollection('drivers'),
-        fetchFullCollection('vehicles'),
-        fetchFullCollection('upts'),
-        fetchFullCollection('tpas'),
-        fetchFullCollection('tps'),
+      const { where } = await import("firebase/firestore");
+      const tripFilters = [
+        where("date", ">=", startDate),
+        where("date", "<=", endDate)
+      ];
+
+      const [trips, users] = await Promise.all([
+        fetchFullCollection('trips', tripFilters),
         fetchFullCollection('users')
       ]);
 
-      await exportAllDataToExcel({
-        trips,
-        drivers,
-        vehicles,
-        upts,
-        tpas,
-        tps,
-        users
-      });
-      onNotify('success', 'Database lengkap berhasil diekspor. Seluruh data tetap tersimpan aman di server.');
+      if (trips.length === 0) {
+        onNotify('error', 'Tidak ada data ritase pada rentang tanggal tersebut');
+        setIsExporting(false);
+        return;
+      }
+
+      await exportTripsToExcel(trips, `Data_Ritase_${startDate}_to_${endDate}`, users);
+      onNotify('success', `Data ritase (${trips.length} baris) berhasil diekspor.`);
     } catch (error) {
       console.error(error);
-      onNotify('error', 'Gagal mengekspor database');
+      onNotify('error', 'Gagal mengekspor data');
     } finally {
       setIsExporting(false);
     }
@@ -2188,90 +2259,85 @@ function ExportCenterView({ profile, onNotify }: any) {
 
   const exportTypes = [
     { 
-      name: 'Data Ritase (Operasional)', 
-      description: 'Seluruh riwayat pengangkutan sampah',
-      icon: <ClipboardList className="w-5 h-5" />, 
+      name: 'Pusat Master Data', 
+      description: 'Ekspor seluruh Master (Kendaraan, SOP, UPT, Lokasi, Pengguna). Tidak termasuk data ritase.',
+      icon: <Database className="w-5 h-5" />, 
       action: async () => {
         setIsExporting(true);
-        const [data, users] = await Promise.all([fetchFullCollection('trips'), fetchFullCollection('users')]);
-        await exportTripsToExcel(data, "Data_Ritase_Lengkap", users);
-        setIsExporting(false);
+        try {
+          const [drivers, vehicles, upts, tpas, tps, users] = await Promise.all([
+            fetchFullCollection('drivers'),
+            fetchFullCollection('vehicles'),
+            fetchFullCollection('upts'),
+            fetchFullCollection('tpas'),
+            fetchFullCollection('tps'),
+            fetchFullCollection('users')
+          ]);
+
+          await exportAllDataToExcel({
+            trips: [],
+            drivers,
+            vehicles,
+            upts,
+            tpas,
+            tps,
+            users
+          });
+          onNotify('success', 'Master data berhasil diekspor.');
+        } catch (err) {
+          onNotify('error', 'Gagal mengekspor master data');
+        } finally {
+          setIsExporting(false);
+        }
       }
-    },
-    { 
-      name: 'Master Kendaraan', 
-      description: 'Daftar armada dan konfigurasi tonase',
-      icon: <Truck className="w-5 h-5" />, 
-      action: async () => {
-        setIsExporting(true);
-        const data = await fetchFullCollection('vehicles');
-        await exportAllDataToExcel({ trips: [], drivers: [], vehicles: data, upts: [], tpas: [], tps: [], users: [] });
-        setIsExporting(false);
-      }
-    },
-    { 
-      name: 'Master Personil', 
-      description: 'Data personil pengemudi dan UPT',
-      icon: <UserRound className="w-5 h-5" />, 
-      action: async () => {
-        setIsExporting(true);
-        const data = await fetchFullCollection('drivers');
-        await exportAllDataToExcel({ trips: [], drivers: data, vehicles: [], upts: [], tpas: [], tps: [], users: [] });
-        setIsExporting(false);
-      }
-    },
-    { 
-      name: 'Master Wilayah UPT', 
-      description: 'Daftar Unit Pelaksana Teknis',
-      icon: <Building2 className="w-5 h-5" />, 
-      action: async () => {
-        setIsExporting(true);
-        const data = await fetchFullCollection('upts');
-        await exportAllDataToExcel({ trips: [], drivers: [], vehicles: [], upts: data, tpas: [], tps: [], users: [] });
-        setIsExporting(false);
-      }
-    },
-    { 
-      name: 'Lokasi TPA & TPS', 
-      description: 'Data titik pembuangan akhir dan sementara',
-      icon: <MapPin className="w-5 h-5" />, 
-      action: async () => {
-        setIsExporting(true);
-        const [tpas, tps] = await Promise.all([fetchFullCollection('tpas'), fetchFullCollection('tps')]);
-        await exportAllDataToExcel({ trips: [], drivers: [], vehicles: [], upts: [], tpas, tps, users: [] });
-        setIsExporting(false);
-      }
-    },
-    { 
-      name: 'Data Pengguna', 
-      description: 'Profil akun dan hak akses sistem',
-      icon: <Users className="w-5 h-5" />, 
-      action: async () => {
-        setIsExporting(true);
-        const data = await fetchFullCollection('users');
-        await exportAllDataToExcel({ trips: [], drivers: [], vehicles: [], upts: [], tpas: [], tps: [], users: data });
-        setIsExporting(false);
-      }
-    },
+    }
   ];
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Pusat Ekspor Data</h2>
-          <p className="text-slate-500 text-sm mt-1">Gunakan halaman ini untuk melakukan backup, audit, dan pelaporan seluruh data sistem secara lengkap (Tanpa Batasan 5,000 Record).</p>
-        </div>
-        <Button 
-          variant="primary" 
-          onClick={handleExportAll} 
-          disabled={isExporting}
-          className="h-12 px-6 gap-3"
-        >
-          {isExporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-          UNDUH SEMUA DATA (BACKUP)
-        </Button>
+      <div>
+        <h2 className="text-2xl font-bold text-white tracking-tight">Pusat Ekspor Data</h2>
+        <p className="text-slate-500 text-sm mt-1">Gunakan halaman ini untuk melakukan backup atau audit data sistem. Ekspor data ritase kini wajib menggunakan rentang tanggal.</p>
       </div>
+
+      <Card className="p-8 bg-slate-900 border-slate-800">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center border border-emerald-500/20">
+              <ClipboardList className="w-5 h-5 text-emerald-500" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">Ekspor Data Ritase</h3>
+              <p className="text-xs text-slate-500 font-medium">Download riwayat operasional sesuai periode yang dipilih.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-950 p-6 rounded-2xl border border-slate-800/50">
+            <Input 
+              label="Tanggal Mulai"
+              type="date"
+              value={startDate}
+              onChange={(e: any) => setStartDate(e.target.value)}
+            />
+            <Input 
+              label="Tanggal Selesai"
+              type="date"
+              value={endDate}
+              onChange={(e: any) => setEndDate(e.target.value)}
+            />
+          </div>
+
+          <Button 
+            variant="primary" 
+            onClick={handleExportCustomRange} 
+            disabled={isExporting}
+            className="h-14 px-8 gap-3 text-sm font-bold tracking-widest shadow-xl shadow-emerald-500/10"
+          >
+            {isExporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+            UNDUH DATA RITASE (PERIODE)
+          </Button>
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {exportTypes.map((type, idx) => (
@@ -2327,7 +2393,13 @@ function ActivityLogView({ profile }: any) {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog)));
       setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, "activity_logs"));
+    }, (err) => {
+      if (err.message.includes("quota") || err.message.includes("limit")) {
+        setLoading(false);
+        return;
+      }
+      handleFirestoreError(err, OperationType.LIST, "activity_logs");
+    });
     return unsubscribe;
   }, []);
 
@@ -2624,7 +2696,7 @@ function ActivityLogView({ profile }: any) {
   );
 }
 
-function DashboardView({ trips: propTrips, profile, onAddClick, upts, tpas, settings }: any) {
+function DashboardView({ trips: propTrips, profile, onAddClick, upts, tpas, settings, tripFilterRange, setTripFilterRange }: any) {
   const trips = useMemo(() => {
     if (profile?.role === 'user' && !settings?.visualDataRitase) {
       const userUpt = profile?.assigned_upt_name || profile?.uptName || profile?.upt || "";
@@ -2633,8 +2705,6 @@ function DashboardView({ trips: propTrips, profile, onAddClick, upts, tpas, sett
     return propTrips;
   }, [propTrips, profile, settings]);
 
-  const [ritasePeriod, setRitasePeriod] = useState<'day' | 'month' | 'year'>('day');
-  const [tonnagePeriod, setTonnagePeriod] = useState<'day' | 'month' | 'year'>('day');
   const isWeightEnabled = settings?.enableWeight !== false;
   const showVolume = settings?.showVolume !== false;
 
@@ -2643,57 +2713,15 @@ function DashboardView({ trips: propTrips, profile, onAddClick, upts, tpas, sett
 
   // Filter Strings
   const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const thisMonthStr = format(new Date(), 'yyyy-MM');
-  const thisYearStr = format(new Date(), 'yyyy');
 
-  // Ritase Logic
-  const ritaseToday = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.tripCount || 0), 0);
-  const ritaseThisMonth = trips.filter((t: any) => t.date.startsWith(thisMonthStr)).reduce((acc: number, t: any) => acc + (t.tripCount || 0), 0);
-  const ritaseThisYear = trips.filter((t: any) => t.date.startsWith(thisYearStr)).reduce((acc: number, t: any) => acc + (t.tripCount || 0), 0);
-
-  const toggleRitasePeriod = () => {
-    if (ritasePeriod === 'day') setRitasePeriod('month');
-    else if (ritasePeriod === 'month') setRitasePeriod('year');
-    else setRitasePeriod('day');
-  };
-
-  const getRitaseDisplay = () => {
-    const monthName = format(new Date(), 'MMMM');
-    const yearName = format(new Date(), 'yyyy');
-    switch (ritasePeriod) {
-      case 'day': return { label: "Ritase Hari Ini", value: `${ritaseToday} Rit` };
-      case 'month': return { label: `Ritase Bulan ${monthName}`, value: `${ritaseThisMonth} Rit` };
-      case 'year': return { label: `Total Ritase ${yearName}`, value: `${ritaseThisYear} Rit` };
-    }
-  };
-
-  // Tonnage Logic
+  // Ritase Logic (Hari Ini)
+  const ritaseToday = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.tripCount || 1), 0);
   const tonnageToday = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.tonnage || 0), 0) / 1000;
-  const tonnageThisMonth = trips.filter((t: any) => t.date.startsWith(thisMonthStr)).reduce((acc: number, t: any) => acc + (t.tonnage || 0), 0) / 1000;
-  const tonnageThisYear = trips.filter((t: any) => t.date.startsWith(thisYearStr)).reduce((acc: number, t: any) => acc + (t.tonnage || 0), 0) / 1000;
+  const volumeToday = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.volume || 0), 0);
 
-  const toggleTonnagePeriod = () => {
-    if (tonnagePeriod === 'day') setTonnagePeriod('month');
-    else if (tonnagePeriod === 'month') setTonnagePeriod('year');
-    else setTonnagePeriod('day');
-  };
-
-  const getTonnageDisplay = () => {
-    const monthName = format(new Date(), 'MMMM');
-    const yearName = format(new Date(), 'yyyy');
-    switch (tonnagePeriod) {
-      case 'day': return { label: "Tonase Hari Ini", value: `${tonnageToday.toFixed(2)} Ton` };
-      case 'month': return { label: `Tonase Bulan ${monthName}`, value: `${tonnageThisMonth.toFixed(2)} Ton` };
-      case 'year': return { label: `Total Tonase ${yearName}`, value: `${tonnageThisYear.toFixed(2)} Ton` };
-    }
-  };
-
-  const ritaseDisplay = getRitaseDisplay();
-  const tonnageDisplay = getTonnageDisplay();
-  
   // Total stats for subvalues
-  const totalVolume = trips.reduce((acc: number, t: any) => acc + (t.volume || 0), 0);
-  const totalRitase = trips.reduce((acc: number, t: any) => acc + (t.tripCount || 0), 0);
+  const totalVolume = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.volume || 0), 0);
+  const totalRitase = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.tripCount || 1), 0);
   const ritaseSubValue = `${totalRitase} Rit`;
   
   // Last 7 days chart data calculation (simple)
@@ -2702,7 +2730,7 @@ function DashboardView({ trips: propTrips, profile, onAddClick, upts, tpas, sett
     const dayTrips = trips.filter((t: any) => t.date === d);
     return {
       date: d,
-      ritase: dayTrips.reduce((acc: number, t: any) => acc + (t.tripCount || 0), 0)
+      ritase: dayTrips.reduce((acc: number, t: any) => acc + (t.tripCount || 1), 0)
     };
   }).reverse();
 
@@ -2710,24 +2738,21 @@ function DashboardView({ trips: propTrips, profile, onAddClick, upts, tpas, sett
     <div className="flex flex-col gap-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Dashboard</h2>
-          <p className="text-slate-500 text-sm">Ringkasan operasional pengelolaan sampah saat ini.</p>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Dashboard Hari Ini</h2>
+          <p className="text-slate-500 text-sm">Ringkasan operasional pengelolaan sampah hari ini.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         <StatsCard 
-          label={tonnageDisplay.label}
-          value={tonnageDisplay.value} 
-          subValue={showVolume ? `${totalVolume.toFixed(1)} m³` : ritaseSubValue}
-          onClick={toggleTonnagePeriod}
+          label="Tonase Hari Ini"
+          value={`${tonnageToday.toFixed(2)} Ton`} 
+          subValue={showVolume ? `${volumeToday.toFixed(1)} m³` : undefined}
           icon={<BarChart3 className="text-emerald-500" />} 
         />
         <StatsCard 
-          label={ritaseDisplay.label} 
-          value={ritaseDisplay.value} 
-          subValue="Klik Ganti"
-          onClick={toggleRitasePeriod}
+          label="Ritase Hari Ini" 
+          value={`${ritaseToday} Rit`} 
           icon={<ClipboardList className="text-blue-500" />} 
         />
         <div className="col-span-2 lg:col-span-1">
@@ -3341,7 +3366,7 @@ function InputRitaseView({ onNotify, upts, tpas, settings, profile, drivers, veh
   );
 }
 
-function TripsView({ trips, profile, onNotify, upts, tpas, settings, drivers, vehicles, setActiveTab, users = [] }: any) {
+function TripsView({ trips, profile, onNotify, upts, tpas, settings, drivers, vehicles, setActiveTab, users = [], tripFilterRange, setTripFilterRange }: any) {
   const isWeightEnabled = settings?.enableWeight !== false;
   const showVolume = settings?.showVolume !== false;
 
@@ -3356,7 +3381,26 @@ function TripsView({ trips, profile, onNotify, upts, tpas, settings, drivers, ve
   const [uptFilter, setUptFilter] = useState("");
   const [dateFilter, setDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
-  const [statusFilter, setStatusFilter] = useState("all"); // default to all for clarity
+  const [statusFilter, setStatusFilter] = useState("monthly"); // Default to monthly to save quota
+
+  // Sync global tripFilterRange with local view filters to optimize Firestore reads
+  useEffect(() => {
+    let newStart = tripFilterRange.start;
+    let newEnd = tripFilterRange.end;
+
+    if (statusFilter === 'daily') {
+      newStart = dateFilter;
+      newEnd = dateFilter;
+    } else if (statusFilter === 'monthly') {
+      const date = new Date(selectedMonth + "-01");
+      newStart = format(startOfMonth(date), 'yyyy-MM-dd');
+      newEnd = format(endOfMonth(date), 'yyyy-MM-dd');
+    }
+
+    if (newStart !== tripFilterRange.start || newEnd !== tripFilterRange.end) {
+      setTripFilterRange({ start: newStart, end: newEnd });
+    }
+  }, [statusFilter, dateFilter, selectedMonth]);
   
   // Reactively reset UPT filter for user role when Visual Data Ritase is turned OFF
   useEffect(() => {
@@ -3594,12 +3638,6 @@ function TripsView({ trips, profile, onNotify, upts, tpas, settings, drivers, ve
               >
                 Hari
               </button>
-              <button 
-                onClick={() => setStatusFilter('all')}
-                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase transition-all ${statusFilter === 'all' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:bg-slate-900'}`}
-              >
-                Semua
-              </button>
             </div>
           </div>
           {statusFilter === 'daily' && (
@@ -3673,18 +3711,8 @@ function TripsView({ trips, profile, onNotify, upts, tpas, settings, drivers, ve
                       </div>
                       <h3 className="text-white font-bold">Data Tidak Ditemukan</h3>
                       <p className="text-slate-500 text-sm max-w-xs mx-auto">
-                        {statusFilter === 'all' 
-                          ? "Belum ada data ritase yang tersimpan di sistem." 
-                          : `Tidak ada data untuk filter ${statusFilter === 'daily' ? 'Hari' : 'Bulan'} ini.`}
+                        Tidak ada data untuk filter {statusFilter === 'daily' ? 'Hari' : 'Bulan'} ini.
                       </p>
-                      {statusFilter !== 'all' && (
-                        <button 
-                          onClick={() => setStatusFilter('all')}
-                          className="mt-2 px-4 py-2 bg-emerald-500/10 text-emerald-500 text-xs font-bold rounded-lg border border-emerald-500/20 hover:bg-emerald-500 hover:text-white transition-all"
-                        >
-                          Tampilkan Semua Data
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -4166,7 +4194,7 @@ function UsersView({ users, profile, onNotify, upts, onResetPasswordSuccess }: a
   );
 }
 
-function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile }: any) {
+function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile, tripFilterRange, setTripFilterRange, reportsCache, setReportsCache }: any) {
   const isWeightEnabled = settings?.enableWeight !== false;
   const showVolume = settings?.showVolume !== false;
 
@@ -4174,6 +4202,142 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedYear, setSelectedYear] = useState(format(new Date(), 'yyyy'));
+
+  const [loadingAggregates, setLoadingAggregates] = useState(false);
+
+  const currentKey = `${reportType}-${
+    reportType === 'daily' ? selectedDate : (reportType === 'monthly' ? selectedMonth : selectedYear)
+  }-${profile?.role || ''}`;
+
+  const isCached = reportsCache && reportsCache.key === currentKey;
+  const displayAggregatedRitase = isCached ? reportsCache.ritase : null;
+  const displayAggregatedTonnage = isCached ? reportsCache.tonnage : null;
+  const displayAggregatedVolume = isCached ? reportsCache.volume : null;
+  const displayMonthlyBreakdown = isCached ? (reportsCache.monthlyBreakdown || []) : [];
+
+  // Reusable aggregation helper function
+  const getTripAggregatesByDateRange = async (startDate: string, endDate: string, userProfile: any) => {
+    let q = query(
+      collection(db, "trips"),
+      where("date", ">=", startDate),
+      where("date", "<=", endDate)
+    );
+    
+    if (userProfile?.role === 'user') {
+      const assignedUptName = userProfile?.assigned_upt_name || userProfile?.uptName || userProfile?.upt || "";
+      if (assignedUptName) {
+        q = query(q, where("upt", "==", assignedUptName));
+      }
+    }
+    
+    try {
+      const snapshot = await getAggregateFromServer(q, {
+        totalTrips: count(),
+        totalTonnage: sum("tonnage"),
+        totalVolume: sum("volume"),
+        totalTripCount: sum("tripCount")
+      });
+      
+      const data = snapshot.data();
+      return {
+        ritase: Number(data.totalTripCount || data.totalTrips || 0),
+        tonnage: Number(data.totalTonnage || 0),
+        volume: Number(data.totalVolume || 0),
+        docCount: Number(data.totalTrips || 0)
+      };
+    } catch (error) {
+      console.error("Aggregation error for range:", startDate, "to", endDate, error);
+      if (error instanceof Error && (error.message.includes("quota") || error.message.includes("Quota"))) {
+        onNotify('error', "Batas kuota database tercapai saat mengambil data laporan.");
+      }
+      return {
+        ritase: 0,
+        tonnage: 0,
+        volume: 0,
+        docCount: 0
+      };
+    }
+  };
+
+  const handleCalculateReport = async () => {
+    setLoadingAggregates(true);
+    try {
+      let dataToCache: any = null;
+      if (reportType === "daily") {
+        const res = await getTripAggregatesByDateRange(selectedDate, selectedDate, profile);
+        dataToCache = {
+          key: currentKey,
+          ritase: res.ritase,
+          tonnage: res.tonnage,
+          volume: res.volume,
+          monthlyBreakdown: []
+        };
+        if (tripFilterRange.start !== selectedDate || tripFilterRange.end !== selectedDate) {
+          setTripFilterRange({ start: selectedDate, end: selectedDate });
+        }
+      } else if (reportType === "monthly") {
+        const date = new Date(selectedMonth + "-01");
+        const start = format(startOfMonth(date), 'yyyy-MM-dd');
+        const end = format(endOfMonth(date), 'yyyy-MM-dd');
+        const res = await getTripAggregatesByDateRange(start, end, profile);
+        dataToCache = {
+          key: currentKey,
+          ritase: res.ritase,
+          tonnage: res.tonnage,
+          volume: res.volume,
+          monthlyBreakdown: []
+        };
+        if (tripFilterRange.start !== start || tripFilterRange.end !== end) {
+          setTripFilterRange({ start, end });
+        }
+      } else if (reportType === "yearly") {
+        const yearVal = parseInt(selectedYear);
+        const promises = [];
+        const indonesianMonths = [
+          "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+          "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+        ];
+        for (let m = 0; m < 12; m++) {
+          const start = format(new Date(yearVal, m, 1), 'yyyy-MM-dd');
+          const end = format(endOfMonth(new Date(yearVal, m, 1)), 'yyyy-MM-dd');
+          promises.push(
+            getTripAggregatesByDateRange(start, end, profile).then(res => ({
+              monthIndex: m,
+              monthName: indonesianMonths[m],
+              ...res
+            }))
+          );
+        }
+        const results = await Promise.all(promises);
+        
+        const sumRitase = results.reduce((sum, item) => sum + item.ritase, 0);
+        const sumTonnage = results.reduce((sum, item) => sum + item.tonnage, 0);
+        const sumVolume = results.reduce((sum, item) => sum + item.volume, 0);
+        
+        dataToCache = {
+          key: currentKey,
+          ritase: sumRitase,
+          tonnage: sumTonnage,
+          volume: sumVolume,
+          monthlyBreakdown: results
+        };
+
+        const yearStart = format(startOfYear(new Date(yearVal, 0, 1)), 'yyyy-MM-dd');
+        const yearEnd = format(endOfYear(new Date(yearVal, 0, 1)), 'yyyy-MM-dd');
+        if (tripFilterRange.start !== yearStart || tripFilterRange.end !== yearEnd) {
+          setTripFilterRange({ start: yearStart, end: yearEnd });
+        }
+      }
+      
+      setReportsCache(dataToCache);
+      onNotify('success', 'Laporan berhasil diperbarui.');
+    } catch (error) {
+      console.error("Gagal mematikan/memuat agregasi laporan:", error);
+      onNotify('error', 'Gagal memproses agregasi laporan.');
+    } finally {
+      setLoadingAggregates(false);
+    }
+  };
 
   const getFilteredTrips = () => {
     if (reportType === "daily") {
@@ -4204,13 +4368,18 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
     return acc;
   }, {});
 
-  const totalRitase = filtered.reduce((acc: number, t: any) => acc + (t.tripCount || 1), 0);
-  const totalTonnage = filtered.reduce((acc: number, t: any) => acc + (t.tonnage || 0), 0);
-  const totalVolume = filtered.reduce((acc: number, t: any) => acc + (t.volume || 0), 0);
+  // Assign screen-displayed values strictly from aggregated values (if cached and calculated) or 0
+  const displayRitase = isCached ? (displayAggregatedRitase ?? 0) : 0;
+  const displayTonnage = isCached ? (displayAggregatedTonnage ?? 0) : 0;
+  const displayVolume = isCached ? (displayAggregatedVolume ?? 0) : 0;
 
   const handleExportExcel = async () => {
+    if (!isCached) {
+      onNotify('error', 'Silakan tampilkan laporan terlebih dahulu sebelum mengekspor data');
+      return;
+    }
     if (filtered.length === 0) {
-      onNotify('error', 'Tidak ada data untuk periode terpilih');
+      onNotify('error', 'Tidak ada data detail untuk periode terpilih');
       return;
     }
     try {
@@ -4236,8 +4405,12 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
   };
 
   const handleExportPdf = () => {
+    if (!isCached) {
+      onNotify('error', 'Silakan tampilkan laporan terlebih dahulu sebelum mengekspor data');
+      return;
+    }
     if (filtered.length === 0) {
-      onNotify('error', 'Tidak ada data untuk periode terpilih');
+      onNotify('error', 'Tidak ada data detail untuk periode terpilih');
       return;
     }
     
@@ -4258,9 +4431,9 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
       doc.text("Ringkasan Data", 14, 50);
       
       const summaryData = [
-        ["Total Ritase", `${totalRitase} Rit`],
-        ...(isWeightEnabled ? [["Total Tonase", `${(totalTonnage / 1000).toFixed(2)} Ton`]] : []),
-        ...(showVolume ? [["Total Volume", `${totalVolume.toFixed(2)} m3`]] : [])
+        ["Total Ritase", `${displayRitase} Rit`],
+        ...(isWeightEnabled ? [["Total Tonase", `${(displayTonnage / 1000).toFixed(2)} Ton`]] : []),
+        ...(showVolume ? [["Total Volume", `${displayVolume.toFixed(2)} m3`]] : [])
       ];
       
       autoTable(doc, {
@@ -4374,18 +4547,35 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
                 options={Array.from({ length: 5 }).map((_, i) => ({ value: (new Date().getFullYear() - i).toString(), label: (new Date().getFullYear() - i).toString() }))}
               />
             )}
+            <Button 
+              onClick={handleCalculateReport} 
+              disabled={loadingAggregates}
+              className="w-full mt-2 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+            >
+              {loadingAggregates ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Memproses...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  {reportType === "yearly" ? "Tampilkan Rekap Tahunan" : "Tampilkan Laporan"}
+                </>
+              )}
+            </Button>
           </div>
 
           <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
              {profile?.role === 'admin' && (
-               <>
-                 <Button onClick={handleExportExcel} className="w-full py-4 text-xs font-bold uppercase tracking-widest gap-3">
-                   <FileSpreadsheet className="w-5 h-5" /> Export Excel
-                 </Button>
-                 <Button onClick={handleExportPdf} variant="secondary" className="w-full py-4 text-xs font-bold uppercase tracking-widest gap-3">
-                   <ClipboardList className="w-5 h-5" /> Export PDF
-                 </Button>
-               </>
+                <>
+                  <Button onClick={handleExportExcel} className="w-full py-4 text-xs font-bold uppercase tracking-widest gap-3">
+                    <FileSpreadsheet className="w-5 h-5" /> Export Excel
+                  </Button>
+                  <Button onClick={handleExportPdf} variant="secondary" className="w-full py-4 text-xs font-bold uppercase tracking-widest gap-3">
+                    <ClipboardList className="w-5 h-5" /> Export PDF
+                  </Button>
+                </>
              )}
           </div>
         </Card>
@@ -4394,18 +4584,42 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="p-4 bg-slate-900/50 border-slate-800">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Ritase</p>
-              <h4 className="text-2xl font-bold text-white">{totalRitase} <span className="text-sm font-medium text-slate-500">Rit</span></h4>
+              <h4 className="text-2xl font-bold text-white">
+                {loadingAggregates ? (
+                  <Loader2 className="w-5 h-5 animate-spin inline-block text-slate-400" />
+                ) : (
+                  <>
+                    {displayRitase} <span className="text-sm font-medium text-slate-500">Rit</span>
+                  </>
+                )}
+              </h4>
             </Card>
             {isWeightEnabled && (
               <Card className="p-4 bg-slate-900/50 border-slate-800">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Tonase</p>
-                <h4 className="text-2xl font-bold text-emerald-500">{(totalTonnage / 1000).toFixed(1)} <span className="text-sm font-medium text-slate-500">Ton</span></h4>
+                <h4 className="text-2xl font-bold text-emerald-500">
+                  {loadingAggregates ? (
+                    <Loader2 className="w-5 h-5 animate-spin inline-block text-slate-400" />
+                  ) : (
+                    <>
+                      {(displayTonnage / 1000).toFixed(1)} <span className="text-sm font-medium text-slate-500">Ton</span>
+                    </>
+                  )}
+                </h4>
               </Card>
             )}
             {showVolume && (
               <Card className="p-4 bg-slate-900/50 border-slate-800">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Volume</p>
-                <h4 className="text-2xl font-bold text-blue-500">{totalVolume.toFixed(1)} <span className="text-sm font-medium text-slate-500">m³</span></h4>
+                <h4 className="text-2xl font-bold text-blue-500">
+                  {loadingAggregates ? (
+                    <Loader2 className="w-5 h-5 animate-spin inline-block text-slate-400" />
+                  ) : (
+                    <>
+                      {displayVolume.toFixed(1)} <span className="text-sm font-medium text-slate-500">m³</span>
+                    </>
+                  )}
+                </h4>
               </Card>
             )}
             <Card className="p-4 bg-slate-900/50 border-slate-800 relative group overflow-hidden">
@@ -4438,7 +4652,7 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
           <Card className="bg-slate-900 border-slate-800 overflow-hidden">
             <div className="p-4 border-b border-slate-800 bg-slate-950/20 flex items-center justify-between">
                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Ringkasan per Wilayah UPT</h3>
-               <Badge variant="user">{filtered.length} Records</Badge>
+               <Badge variant="user">{filtered.length} {filtered.length === 2000 ? "Records (Capped)" : "Records"}</Badge>
             </div>
             <div className="p-4 overflow-x-auto">
               <table className="w-full text-left">
@@ -4450,22 +4664,30 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
                    </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
-                  {Object.entries(summaryByUpt).length > 0 ? Object.entries(summaryByUpt).sort((a: any, b: any) => b[1] - a[1]).map(([upt, rit]: any) => {
-                    const percentage = (rit / totalRitase) * 100;
-                    return (
-                      <tr key={upt} className="group">
-                        <td className="py-3 px-2 text-sm font-bold text-slate-300">{upt}</td>
-                        <td className="py-3 px-2 text-sm font-mono text-emerald-500 text-right">{rit} Rit</td>
-                        <td className="py-3 px-2 text-right min-w-[120px]">
-                          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${percentage}%` }} />
-                          </div>
-                        </td>
+                  {isCached ? (
+                    Object.entries(summaryByUpt).length > 0 ? Object.entries(summaryByUpt).sort((a: any, b: any) => b[1] - a[1]).map(([upt, rit]: any) => {
+                      const percentage = displayRitase > 0 ? (rit / displayRitase) * 100 : 0;
+                      return (
+                        <tr key={upt} className="group">
+                          <td className="py-3 px-2 text-sm font-bold text-slate-300">{upt}</td>
+                          <td className="py-3 px-2 text-sm font-mono text-emerald-500 text-right">{rit} Rit</td>
+                          <td className="py-3 px-2 text-right min-w-[120px]">
+                            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${percentage}%` }} />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan={3} className="py-8 text-center text-xs text-slate-600 italic">Tidak ada data detail untuk periode ini</td>
                       </tr>
-                    );
-                  }) : (
+                    )
+                  ) : (
                     <tr>
-                      <td colSpan={3} className="py-8 text-center text-xs text-slate-600 italic">Tidak ada data untuk periode ini</td>
+                      <td colSpan={3} className="py-8 text-center text-xs text-slate-500 italic font-medium">
+                        Silakan klik tombol "Tampilkan Laporan" untuk memproses data UPT
+                      </td>
                     </tr>
                   )}
                 </tbody>
@@ -4478,17 +4700,72 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Ringkasan per Jenis Kendaraan</h3>
             </div>
             <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
-               {Object.entries(summaryByVehicleType).map(([type, rit]: any) => (
-                 <div key={type} className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-tighter mb-1 truncate">{type}</p>
-                    <p className="text-xl font-bold text-white">{rit} <span className="text-[10px] text-slate-500">Rit</span></p>
+               {isCached ? (
+                 <>
+                   {Object.entries(summaryByVehicleType).map(([type, rit]: any) => (
+                     <div key={type} className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                        <p className="text-[10px] font-bold text-slate-600 uppercase tracking-tighter mb-1 truncate">{type}</p>
+                        <p className="text-xl font-bold text-white">{rit} <span className="text-[10px] text-slate-500">Rit</span></p>
+                     </div>
+                   ))}
+                   {Object.entries(summaryByVehicleType).length === 0 && (
+                     <div className="col-span-full py-4 text-center text-xs text-slate-600 italic">Data kosong</div>
+                   )}
+                 </>
+               ) : (
+                 <div className="col-span-full py-4 text-center text-xs text-slate-500 italic font-medium">
+                    Silakan klik tombol "Tampilkan Laporan" untuk memproses data jenis kendaraan
                  </div>
-               ))}
-               {Object.entries(summaryByVehicleType).length === 0 && (
-                 <div className="col-span-full py-4 text-center text-xs text-slate-600 italic">Data kosong</div>
                )}
             </div>
           </Card>
+
+          {/* Yearly Month-by-Month breakdown with accurate aggregates */}
+          {reportType === "yearly" && (
+            <Card className="bg-slate-900 border-slate-800 overflow-hidden">
+              <div className="p-4 border-b border-slate-800 bg-slate-950/20 flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Detail Ritase & Tonase per Bulan</h3>
+                {loadingAggregates && <Loader2 className="w-4 h-4 animate-spin text-slate-500" />}
+              </div>
+              <div className="p-4 overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                    <tr>
+                      <th className="pb-3 px-2">Bulan</th>
+                      <th className="pb-3 px-2 text-right">Ritase</th>
+                      {isWeightEnabled && <th className="pb-3 px-2 text-right">Tonase</th>}
+                      {showVolume && <th className="pb-3 px-2 text-right">Volume</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {isCached && displayMonthlyBreakdown.length > 0 ? displayMonthlyBreakdown.map((item) => (
+                      <tr key={item.monthIndex} className="group hover:bg-slate-850/35 transition-colors">
+                        <td className="py-3 px-2 text-sm font-bold text-slate-300">{item.monthName}</td>
+                        <td className="py-3 px-2 text-sm font-mono text-emerald-500 text-right">{item.ritase} Rit</td>
+                        {isWeightEnabled && (
+                          <td className="py-3 px-2 text-sm font-mono text-emerald-400 text-right">
+                            {(item.tonnage / 1000).toFixed(1)} Ton
+                          </td>
+                        )}
+                        {showVolume && (
+                          <td className="py-3 px-2 text-sm font-mono text-blue-500 text-right">
+                            {item.volume.toFixed(1)} m³
+                          </td>
+                        )}
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan={isWeightEnabled ? (showVolume ? 4 : 3) : (showVolume ? 3 : 2)} className="py-8 text-center text-xs text-slate-500 italic font-medium">
+                          {loadingAggregates ? "Sedang memposting data..." : "Silakan klik tombol \"Tampilkan Rekap Tahunan\" untuk memproses"}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
         </div>
       </div>
     </div>
