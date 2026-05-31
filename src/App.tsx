@@ -31,6 +31,7 @@ import {
   sum
 } from "firebase/firestore";
 import { auth, db, handleFirestoreError, OperationType } from "./lib/firebase";
+import firebaseConfig from "../firebase-applet-config.json";
 import { UserProfile, TripRecord, UserRole, UPT_LIST, Vehicle, Driver, TPA, TPS, ActivityLog } from "./types";
 import { INITIAL_TPS_DATA } from "./lib/seedData";
 import { 
@@ -51,6 +52,8 @@ import {
   Lock,
   Unlock,
   ArrowRight,
+  ArrowLeft,
+  Calendar,
   Mail,
   Eye,
   EyeOff,
@@ -75,12 +78,34 @@ import {
   Weight,
   ShieldCheck,
   RotateCcw,
-  Fuel
+  Fuel,
+  Filter
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format, startOfDay, endOfDay, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
 import { exportTripsToExcel, exportAllDataToExcel } from "./lib/excelExport";
 import { APP_VERSION, APP_NAME, APP_FULL_NAME, APP_ORG, APP_ORG_SHORT } from "./constants";
+import { UpdateNotification } from "./components/UpdateNotification";
+import { BakungDashboardView } from "./features/bakung/BakungDashboardView";
+import { UsersView } from "./features/users/UsersView";
+import { InputRitaseView } from "./features/ritase/InputRitaseView";
+import { TripForm } from "./features/ritase/TripForm";
+import { TripsView } from "./features/ritase/TripsView";
+import { ReportsView } from "./features/ritase/ReportsView";
+import { MainDashboardView } from "./features/dashboard/MainDashboardView";
+import { VehiclesView } from "./features/master-data/VehiclesView";
+import { DriversView } from "./features/master-data/DriversView";
+import { UptsView } from "./features/master-data/UptsView";
+import { TpasTpsView } from "./features/master-data/TpasTpsView";
+import { SettingsView } from "./features/settings/SettingsView";
+import { VehicleEditModal } from "./features/master-data/components/VehicleEditModal";
+import { DriverEditModal } from "./features/master-data/components/DriverEditModal";
+import { AuthView } from "./features/auth/AuthView";
+import { ActivationPendingView } from "./features/auth/ActivationPendingView";
+import { UptAssignmentPendingView } from "./features/auth/UptAssignmentPendingView";
+import { AppLayout } from "./components/layout/AppLayout";
+import { Logo } from "./components/layout/Logo";
+import { Button, Input, Select, Card, Badge, Modal } from "./features/master-data/components/SharedUI";
 
 import { 
   LineChart, 
@@ -149,340 +174,9 @@ const logActivity = async (
 };
 
 // Components
-const Logo = ({ size = "md", className = "" }: { size?: "sm" | "md" | "lg" | "xl", className?: string }) => {
-  const sizes = {
-    sm: "w-8 h-8",
-    md: "w-12 h-12",
-    lg: "w-24 h-24",
-    xl: "w-32 h-32"
-  };
 
-  return (
-    <div className={`relative flex items-center justify-center ${sizes[size]} ${className}`}>
-      {/* Primary Logo Image */}
-      <img 
-        src="/logo_siap.png" 
-        alt={`${APP_NAME} Logo`} 
-        className="w-full h-full object-contain relative z-10"
-        referrerPolicy="no-referrer"
-        onError={(e: any) => {
-          // If image fails to load, hide it and show SVG fallback
-          e.target.style.display = 'none';
-          e.target.nextSibling.style.display = 'block';
-        }}
-      />
+// --- View Components ---
 
-      {/* Modern SVG Fallback (reconstructed to match the new branding's aesthetic) */}
-      <svg 
-        viewBox="0 0 100 100" 
-        fill="none" 
-        xmlns="http://www.w3.org/2000/svg" 
-        className="w-full h-full drop-shadow-xl hidden"
-      >
-        <circle cx="50" cy="50" r="48" fill="white" />
-        <circle cx="50" cy="50" r="42" stroke="#059669" strokeWidth="2" strokeDasharray="4 2" />
-        
-        {/* Stylized Truck Shape */}
-        <path d="M25 60H35V45H75V65H25V60Z" fill="#059669" />
-        <path d="M35 45L40 40H70L75 45H35Z" fill="#10B981" />
-        <circle cx="35" cy="65" r="4" fill="#1e293b" />
-        <circle cx="65" cy="65" r="4" fill="#1e293b" />
-        
-        {/* Environment Leaves */}
-        <path d="M45 35C45 35 48 25 55 28C62 31 60 40 60 40C60 40 52 40 48 37C44 34 45 35 45 35Z" fill="#10B981" />
-        <path d="M55 35C55 35 52 25 45 28C38 31 40 40 40 40C40 40 48 40 52 37C56 34 55 35 55 35Z" fill="#059669" />
-        
-        {/* Text Area */}
-        <text x="50" y="85" textAnchor="middle" fill="#059669" fontSize="10" fontWeight="bold" className="font-sans">{APP_NAME}</text>
-      </svg>
-    </div>
-  );
-};
-
-const Button = ({ children, onClick, variant = "primary", className = "", disabled = false, type = "button" }: any) => {
-  const base = "px-4 py-2 rounded-lg font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
-  const variants: any = {
-    primary: "bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-900/20",
-    secondary: "bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700",
-    danger: "bg-red-950/30 text-red-400 border border-red-900/50 hover:bg-red-900/40",
-    ghost: "text-slate-400 hover:bg-slate-800"
-  };
-  return (
-    <button type={type} onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${className}`}>
-      {children}
-    </button>
-  );
-};
-
-const Input = ({ label, icon, type, error, showError: propsShowError, ...props }: any) => {
-  const [showPassword, setShowPassword] = useState(false);
-  const [isTouched, setIsTouched] = useState(false);
-  const isPassword = type === "password";
-  const inputType = isPassword ? (showPassword ? "text" : "password") : type;
-  const isRequired = props.required;
-  
-  const value = props.value !== undefined ? props.value : (props.defaultValue || "");
-  const isEmpty = typeof value === 'string' ? !value.trim() : (value === null || value === undefined);
-  const showError = propsShowError || (isRequired && isTouched && isEmpty) || error;
-
-  return (
-    <div className="flex flex-col gap-1 w-full relative">
-      {label && (
-        <div className="flex items-center justify-between ml-1 mb-0.5">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
-            {label}
-            {isRequired && <span className="text-rose-500 font-bold">*</span>}
-          </label>
-        </div>
-      )}
-      <div className="relative">
-        {icon && <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">{icon}</div>}
-        <input
-          {...props}
-          type={inputType}
-          onBlur={(e) => {
-            setIsTouched(true);
-            if (props.onBlur) props.onBlur(e);
-          }}
-          onFocus={(e) => {
-            if (props.type === "number" || props.type === "text") {
-              e.target.select();
-            }
-            if (props.onFocus) props.onFocus(e);
-          }}
-          className={`w-full px-3 py-2 bg-slate-950 border rounded-lg text-slate-200 text-base md:text-sm placeholder:text-slate-700 focus:outline-none focus:ring-2 transition-all ${
-            showError 
-              ? 'border-rose-500/50 focus:ring-rose-500/20 focus:border-rose-500' 
-              : 'border-slate-800 focus:ring-emerald-500/30 focus:border-emerald-500/50'
-          } ${icon ? 'pl-10' : ''} ${isPassword ? 'pr-10' : ''} ${props.className || ''}`}
-        />
-        {isPassword && (
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        )}
-      </div>
-      {showError && (
-        <div className="ml-1 animate-in fade-in slide-in-from-top-1 duration-200">
-          <span className="text-[9px] font-semibold text-rose-500 italic lowercase tracking-tight">
-            {error || "Wajib diisi"}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const Select = ({ label, options, value: propsValue, onChange, placeholder, name, required, disabled, defaultValue, error, showError: propsShowError }: any) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isTouched, setIsTouched] = useState(false);
-  const [search, setSearch] = useState("");
-  const [internalValue, setInternalValue] = useState(defaultValue || "");
-  const [activeIndex, setActiveIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const value = propsValue !== undefined ? propsValue : internalValue;
-  const isEmpty = value === "" || value === null || value === undefined;
-  const showError = propsShowError || (required && isTouched && isEmpty) || error;
-
-  const filteredOptions = options.filter((opt: any) => {
-    const labelText = (typeof opt === 'object' ? (opt.label || opt.value || "") : opt).toString().toLowerCase();
-    return labelText.includes(search.toLowerCase());
-  });
-
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [search, isOpen]);
-
-  const selectedOption = options.find((opt: any) => {
-    const val = typeof opt === 'object' ? opt.value : opt;
-    return val === value;
-  });
-  const displayLabel = selectedOption ? (typeof selectedOption === 'object' ? selectedOption.label : selectedOption) : "";
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        if (isOpen) setIsTouched(true);
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
-
-  const handleSelect = (opt: any) => {
-    const val = typeof opt === 'object' ? (opt.value !== undefined ? opt.value : opt) : opt;
-    if (propsValue === undefined) {
-      setInternalValue(val);
-    }
-    if (onChange) {
-      onChange({ target: { value: val, name } });
-    }
-    setIsTouched(true);
-    setIsOpen(false);
-    setSearch("");
-  };
-
-  return (
-    <div className={`flex flex-col gap-1 w-full relative ${disabled ? 'opacity-50 pointer-events-none' : ''}`} ref={containerRef}>
-      {label && (
-        <div className="flex items-center justify-between ml-1 mb-0.5">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
-            {label}
-            {required && <span className="text-rose-500 font-bold">*</span>}
-          </label>
-        </div>
-      )}
-      <div 
-        onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`px-3 py-2 bg-slate-950 border rounded-lg text-slate-200 focus-within:ring-2 transition-all cursor-pointer flex items-center justify-between ${
-          showError 
-            ? 'border-rose-500/50 focus-within:ring-rose-500/20 focus-within:border-rose-500' 
-            : 'border-slate-800 focus-within:ring-emerald-500/50 focus-within:border-emerald-500/50'
-        }`}
-      >
-        <span className={displayLabel ? "text-slate-200" : "text-slate-600"}>
-          {displayLabel || placeholder || "Pilih..."}
-        </span>
-        <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </div>
-
-      <input type="hidden" name={name} value={value} required={required} />
-
-      {showError && (
-        <div className="ml-1 animate-in fade-in slide-in-from-top-1 duration-200">
-          <span className="text-[9px] font-semibold text-rose-500 italic lowercase tracking-tight">
-            {error || "Wajib diisi"}
-          </span>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="absolute top-full left-0 right-0 z-50 mt-2 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden"
-          >
-            <div className="p-2 border-b border-slate-800 bg-slate-950/50 flex items-center gap-2">
-              <Search className="w-4 h-4 text-slate-500" />
-              <input 
-                autoFocus
-                className="bg-transparent border-none outline-none text-base md:text-sm text-slate-200 w-full"
-                placeholder="Cari..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setActiveIndex(prev => (filteredOptions.length > 0 ? (prev + 1) % filteredOptions.length : 0));
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setActiveIndex(prev => (filteredOptions.length > 0 ? (prev - 1 + filteredOptions.length) % filteredOptions.length : 0));
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (filteredOptions.length > 0) {
-                      handleSelect(filteredOptions[activeIndex]);
-                    }
-                  } else if (e.key === 'Escape') {
-                    setIsOpen(false);
-                  }
-                }}
-              />
-            </div>
-            <div className="max-h-60 overflow-y-auto">
-              {filteredOptions.length > 0 ? (
-                filteredOptions.map((opt: any, idx: number) => {
-                  const val = typeof opt === 'object' ? opt.value : opt;
-                  const label = typeof opt === 'object' ? opt.label : opt;
-                  const isActive = idx === activeIndex;
-                  return (
-                    <button
-                      key={`${val}-${idx}`}
-                      type="button"
-                      onClick={() => handleSelect(opt)}
-                      onMouseEnter={() => setActiveIndex(idx)}
-                      className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                        isActive ? 'bg-emerald-500/10 text-emerald-500' : 
-                        val === value ? 'bg-emerald-500/20 text-emerald-500' : 'text-slate-400'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="px-4 py-3 text-sm text-slate-600 text-center italic">Tidak ada hasil</div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
-const Card = ({ children, className = "", ...props }: any) => (
-  <div {...props} className={`bg-slate-900 rounded-2xl border border-slate-800 shadow-xl ${className}`}>
-    {children}
-  </div>
-);
-
-const Badge = ({ children, variant = "default" }: any) => {
-  const variants: any = {
-    default: "bg-slate-800 text-slate-400 border border-slate-700",
-    admin: "bg-purple-500/10 text-purple-400 border border-purple-500/20",
-    coadmin: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
-    user: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-    active: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-    inactive: "bg-red-500/10 text-red-500 border-red-500/20"
-  };
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border whitespace-nowrap ${variants[variant] || variants.default}`}>
-      {children}
-    </span>
-  );
-};
-
-const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md" }: any) => {
-  if (!isOpen) return null;
-  return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
-          onClick={onClose}
-        />
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className={`relative w-full ${maxWidth} bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col`}
-        >
-          <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">{title}</h3>
-            <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
-              <X className="w-5 h-5 text-slate-500" />
-            </button>
-          </div>
-          <div className="p-6">
-            {children}
-          </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
-  );
-};
 
 const ChangePasswordModal = ({ isOpen, onClose, user, profile, onNotify, isForced = false }: any) => {
   const [loading, setLoading] = useState(false);
@@ -653,6 +347,13 @@ export default function App() {
       setShowChangePassword(true);
     }
   }, [profile?.force_password_change]);
+
+  // Set default tab for operator_bakung
+  useEffect(() => {
+    if (profile?.role === "operator_bakung") {
+      setActiveTab("bakung");
+    }
+  }, [profile?.role]);
   const [resetSuccessData, setResetSuccessData] = useState<{ tempPassword: string, username: string } | null>(null);
   const [dbExpanded, setDbExpanded] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
@@ -663,6 +364,8 @@ export default function App() {
   const [showGlobalVehicleModal, setShowGlobalVehicleModal] = useState(false);
   const [showGlobalDriverModal, setShowGlobalDriverModal] = useState(false);
   const [globalModalLoading, setGlobalModalLoading] = useState(false);
+
+  const updateCheckerRef = useRef<any>(null);
 
   const prevUserRef = useRef<FirebaseUser | null>(null);
   const prevProfileRef = useRef<UserProfile | null>(null);
@@ -710,30 +413,39 @@ export default function App() {
             setProfile(newProfile);
             prevProfileRef.current = newProfile;
           } else {
+            // Profile document doesn't exist. This usually happens during manual registration.
+            // We only auto-create it if the user is the master bootstrap admin to prevent lockout
+            // while avoiding race conditions for regular manual registration.
             const username = firebaseUser.email?.split('@')[0] || "user";
-            const initialProfile: UserProfile = {
-              userId: firebaseUser.uid,
-              username: username,
-              email: firebaseUser.email || "",
-              role: (firebaseUser.email === "bpsdlh@gmail.com" || username === "bpsdlh") ? "admin" : "user",
-              account_name: firebaseUser.displayName || username,
-              operator_name: "",
-              status: 'active',
-              assigned_upt_id: "",
-              assigned_upt_name: "",
-              createdAt: serverTimestamp()
-            };
-            await setDoc(docRef, initialProfile).catch(err => {
-              handleFirestoreError(err, OperationType.WRITE, `users/${firebaseUser.uid}`);
-              throw err;
-            });
+            const isMasterAdmin = firebaseUser.email === "bpsdlh@gmail.com" || username === "bpsdlh";
             
-            if (isLoggingIn || !prevProfileRef.current) {
-              logActivity('login', 'login_success', 'Autentikasi', 'Pengguna berhasil masuk (Registrasi Baru)', { profile: initialProfile });
+            if (isMasterAdmin) {
+              const initialProfile: UserProfile = {
+                userId: firebaseUser.uid,
+                username: username,
+                email: firebaseUser.email || "",
+                role: "admin",
+                account_name: firebaseUser.displayName || username,
+                operator_name: "",
+                status: 'active',
+                assigned_upt_id: "",
+                assigned_upt_name: "",
+                createdAt: serverTimestamp()
+              };
+              await setDoc(docRef, initialProfile).catch(err => {
+                handleFirestoreError(err, OperationType.WRITE, `users/${firebaseUser.uid}`);
+                throw err;
+              });
+              
+              if (isLoggingIn || !prevProfileRef.current) {
+                logActivity('login', 'login_success', 'Autentikasi', 'Pengguna berhasil masuk (Registrasi Baru)', { profile: initialProfile });
+              }
+              
+              setProfile(initialProfile);
+              prevProfileRef.current = initialProfile;
+            } else {
+              console.log("No profile doc yet for new user:", firebaseUser.uid, "- waiting for handleSubmit to create it.");
             }
-            
-            setProfile(initialProfile);
-            prevProfileRef.current = initialProfile;
           }
         } catch (error) {
           console.error("Error fetching profile:", error);
@@ -976,7 +688,18 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginPage onNotify={notify} />;
+    return <AuthView onNotify={notify} onRegisterSuccess={(p) => {
+      setProfile(p);
+      prevProfileRef.current = p;
+    }} logActivity={logActivity} />;
+  }
+
+  if (profile && (profile.role === "viewer" || profile.status === "pending")) {
+    return <ActivationPendingView profile={profile} onNotify={notify} logActivity={logActivity} />;
+  }
+
+  if (profile && profile.role === "user" && !profile.assigned_upt_id) {
+    return <UptAssignmentPendingView profile={profile} onNotify={notify} logActivity={logActivity} />;
   }
 
   const navigateTo = (tab: string) => {
@@ -985,340 +708,34 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col font-sans text-slate-200">
-      {/* Global Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-[60] h-20 shadow-xl shadow-slate-950/20">
-        <div className="flex items-center gap-4">
-          <Logo size="md" className="shadow-lg shadow-emerald-900/10 group overflow-hidden" />
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <h1 className="font-bold text-emerald-500 leading-tight tracking-tight text-xl">{APP_NAME}</h1>
-              <Badge variant="user" className="hidden md:inline-flex text-[8px] px-1.5 py-0 h-4">{APP_VERSION}</Badge>
-            </div>
-            <div className="hidden md:block">
-              <p className="text-[10px] text-slate-400 font-bold leading-tight uppercase tracking-wider">{APP_FULL_NAME}</p>
-              <p className="text-[8px] text-slate-500 font-mono tracking-widest uppercase">{APP_ORG}</p>
-            </div>
-            <div className="md:hidden">
-              <p className="text-[8px] text-slate-500 font-mono tracking-widest uppercase">{APP_ORG_SHORT}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          {/* Mobile Toggle */}
-          <button 
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2 text-slate-400 hover:text-white transition-colors bg-slate-800 rounded-lg border border-slate-700"
-          >
-            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
-          
-          <div className="relative">
-            <button 
-              onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center gap-3 pl-4 md:border-l border-slate-800 hover:bg-slate-800/40 p-2 rounded-xl transition-colors group"
-            >
-              <div className="hidden md:block text-right">
-                <p className="text-[10px] font-bold text-white truncate max-w-[120px] group-hover:text-emerald-400 transition-colors">{profile?.account_name || profile?.name || user.displayName}</p>
-                <div className="flex justify-end mt-0.5"><Badge variant={profile?.role}>{profile?.role}</Badge></div>
-              </div>
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full ring-2 ring-emerald-500/20 group-hover:ring-emerald-500/50 transition-all referrer-no-referrer" />
-              ) : (
-                <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-slate-500 border border-slate-700 group-hover:border-emerald-500/50 transition-all">
-                  <User className="w-4 h-4" />
-                </div>
-              )}
-            </button>
-
-            <AnimatePresence>
-              {isProfileOpen && (
-                <>
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-[100] bg-slate-950/20 backdrop-blur-[2px]" 
-                    onClick={() => setIsProfileOpen(false)}
-                  />
-                  <motion.div
-                    initial={{ x: '100%' }}
-                    animate={{ x: 0 }}
-                    exit={{ x: '100%' }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="fixed top-0 right-0 h-screen w-full sm:w-80 md:w-80 bg-slate-900 border-l border-slate-800 shadow-2xl p-4 sm:p-6 z-[110] flex flex-col overflow-x-hidden"
-                  >
-                    <div className="flex items-center justify-between mb-6 sm:mb-8">
-                      <h3 className="text-xs sm:text-sm font-bold text-slate-500 underline decoration-emerald-500/50 underline-offset-4 uppercase tracking-widest">Profil Pengguna</h3>
-                      <button onClick={() => setIsProfileOpen(false)} className="p-2 hover:bg-slate-800 rounded-full transition-colors"><X className="w-5 h-5 text-slate-500" /></button>
-                    </div>
-
-                    <div className="flex flex-col items-center text-center mb-6 sm:mb-8 p-4 sm:p-6 bg-slate-950 rounded-2xl border border-slate-800 shadow-inner group transition-all hover:border-emerald-500/20 w-full max-w-full overflow-hidden">
-                      <div className="relative mb-4">
-                        {user.photoURL ? (
-                          <img src={user.photoURL} alt="" className="w-16 h-16 sm:w-20 sm:h-20 rounded-full ring-4 ring-emerald-500/20 shadow-xl referrer-no-referrer" />
-                        ) : (
-                          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-800 rounded-2xl flex items-center justify-center text-slate-500 border border-slate-700 shadow-xl group-hover:border-emerald-500/30 transition-all">
-                            <User className="w-8 h-8 sm:w-10 sm:h-10" />
-                          </div>
-                        )}
-                        <div className="absolute -bottom-1 -right-1 p-1 bg-emerald-500 rounded-lg shadow-lg border-2 border-slate-950">
-                          <CheckCircle2 className="w-2.5 h-2.5 text-white" />
-                        </div>
-                      </div>
-                      <h4 className="text-lg sm:text-xl font-bold text-white tracking-tight leading-tight break-words w-full px-2">{profile?.account_name || profile?.name || user.displayName}</h4>
-                      <p className="text-[10px] sm:text-xs text-slate-500 font-medium mt-1 uppercase tracking-wider">{profile?.operator_name || "Operator Lapangan"}</p>
-                      <div className="mt-2"><Badge variant={profile?.role}>{profile?.role}</Badge></div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-4">
-                      <div className="flex items-center justify-center w-full">
-                        <div className="w-full max-w-full p-3 bg-slate-950/50 rounded-xl border border-slate-800 flex items-center justify-between gap-3">
-                          <p className="text-[9px] sm:text-[10px] text-slate-600 font-bold uppercase tracking-widest shrink-0">Status Akun</p>
-                          <div className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800 shrink-0">
-                            <div className={`w-1.5 h-1.5 rounded-full ${profile?.status === 'active' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
-                            <span className="text-[9px] sm:text-[10px] font-bold text-slate-300 capitalize">{profile?.status || 'Active'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {profile?.role === 'user' && (
-                        <div className="w-full p-4 bg-slate-950/50 rounded-xl border border-slate-800 space-y-4">
-                          <div>
-                            <p className="text-[9px] sm:text-[10px] text-slate-600 font-bold uppercase tracking-widest mb-2">Penempatan Tugas</p>
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 shrink-0">
-                                <Building2 className="w-4 h-4" />
-                              </div>
-                              <p className="text-xs sm:text-sm font-bold text-slate-200 truncate">{profile?.assigned_upt_name || 'Semua UPT'}</p>
-                            </div>
-                          </div>
-
-                          <div className="h-px bg-slate-800" />
-
-                          <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                            <div className="text-center p-2 rounded-lg bg-slate-900/40 border border-transparent hover:border-emerald-500/10 transition-colors">
-                              <p className="text-[8px] sm:text-[9px] text-slate-600 font-bold uppercase tracking-widest mb-1.5">Armada</p>
-                              <div className="flex items-center justify-center gap-1.5">
-                                <Truck className="w-3 h-3 text-emerald-500/50" />
-                                <p className="text-sm sm:text-base font-bold text-emerald-500 font-mono">
-                                  {profile?.assigned_upt_name ? vehicles.filter((v: any) => v.upt === profile.assigned_upt_name || v.upts?.includes(profile.assigned_upt_name)).length : "-"}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-center p-2 rounded-lg bg-slate-900/40 border border-transparent hover:border-emerald-500/10 transition-colors">
-                              <p className="text-[8px] sm:text-[9px] text-slate-600 font-bold uppercase tracking-widest mb-1.5">Personil</p>
-                              <div className="flex items-center justify-center gap-1.5">
-                                <UserRound className="w-3 h-3 text-emerald-500/50" />
-                                <p className="text-sm sm:text-base font-bold text-emerald-500 font-mono">
-                                  {profile?.assigned_upt_name ? drivers.filter((d: any) => d.upt === profile.assigned_upt_name || d.upts?.includes(profile.assigned_upt_name)).length : "-"}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="w-full p-3 bg-emerald-500/5 rounded-xl border border-emerald-500/10 text-center">
-                        <p className="text-[8px] sm:text-[9px] text-emerald-500/60 font-bold uppercase tracking-[0.2em] mb-1">Informasi</p>
-                        <p className="text-[9px] sm:text-[10px] text-slate-500 leading-relaxed italic">Monitoring ritase pengangkutan sampah real-time Kota Bandar Lampung.</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 sm:mt-8 space-y-4 sm:space-y-6 pb-6 border-t border-slate-800/50 pt-6">
-                      <button 
-                        onClick={() => setShowChangePassword(true)}
-                        className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-all font-bold text-[10px] sm:text-xs uppercase tracking-widest"
-                      >
-                        <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        GANTI PASSWORD
-                      </button>
-
-                      <button 
-                        onClick={async () => {
-                        if (profile) {
-                          await logActivity('login', 'logout', 'Autentikasi', 'Pengguna keluar dari sistem', { profile });
-                        }
-                        signOut(auth);
-                      }}
-                        className="w-full flex items-center justify-center gap-3 px-6 py-3 sm:py-4 bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white border border-rose-500/20 rounded-xl transition-all font-bold text-xs sm:text-sm shadow-lg shadow-rose-500/5 uppercase tracking-widest"
-                      >
-                        <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
-                        LOGOUT
-                      </button>
-
-                      <div className="flex flex-col items-center text-center space-y-1">
-                        <h5 className="text-xl sm:text-2xl font-black text-emerald-500 tracking-tighter leading-none">{APP_NAME}</h5>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wide leading-tight">{APP_FULL_NAME}</p>
-                        <p className="text-[7px] text-slate-600 font-mono tracking-[0.2em] uppercase">{APP_ORG}</p>
-                      </div>
-                    </div>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex flex-1 flex-col md:flex-row relative">
-
-      {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="fixed inset-x-0 bottom-0 top-20 z-40 bg-slate-950/40 backdrop-blur-sm md:hidden"
-            />
-            <motion.aside 
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed top-20 left-0 bottom-0 z-50 w-72 bg-slate-900 border-r border-slate-800 p-0 flex flex-col md:hidden shadow-2xl"
-            >
-              <div className="flex items-center justify-between mb-4 p-6 pb-2">
-                <div className="flex items-center gap-3">
-                  <Logo size="sm" className="shadow-lg shadow-emerald-900/20" />
-                  <div>
-                    <h1 className="font-bold text-emerald-500 leading-tight tracking-tight text-sm">{APP_NAME}</h1>
-                    <p className="text-[10px] text-slate-400 font-bold leading-tight">{APP_FULL_NAME}</p>
-                    <p className="text-[8px] text-slate-500 font-mono tracking-widest uppercase">{APP_ORG_SHORT}</p>
-                  </div>
-                </div>
-                <button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-500 hover:text-white transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <nav className="flex-1 flex flex-col gap-2 p-6 pt-2 overflow-y-auto custom-scrollbar">
-                <NavItem active={activeTab === "dashboard"} onClick={() => navigateTo("dashboard")} icon={<BarChart3 />} label="Dashboard" />
-                <NavItem active={activeTab === "input-ritase"} onClick={() => navigateTo("input-ritase")} icon={<Truck />} label="Input Ritase" />
-                <NavItem active={activeTab === "trips"} onClick={() => navigateTo("trips")} icon={<ClipboardList />} label="Data Ritase" />
-                
-                <div className="mt-4 mb-2">
-                  <button 
-                    onClick={() => setDbExpanded(!dbExpanded)}
-                    className="w-full flex items-center justify-between px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Database className="w-3 h-3" />
-                      Master Database
-                    </div>
-                    {dbExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </button>
-                  <AnimatePresence>
-                    {dbExpanded && (
-                      <motion.div 
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden flex flex-col gap-1 mt-1 pl-2"
-                      >
-                        <NavItem active={activeTab === "vehicles"} onClick={() => navigateTo("vehicles")} icon={<Truck />} label="Kendaraan" isSub />
-                        <NavItem active={activeTab === "drivers"} onClick={() => navigateTo("drivers")} icon={<UserRound />} label="Personil" isSub />
-                        <NavItem active={activeTab === "upt-master"} onClick={() => navigateTo("upt-master")} icon={<Building2 />} label="UPT" isSub />
-                        <NavItem active={activeTab === "tpa"} onClick={() => navigateTo("tpa")} icon={<MapPin />} label="TPA/TPS" isSub />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {(profile?.role === 'admin' || profile?.role === 'co-admin') && (
-                  <NavItem active={activeTab === "users"} onClick={() => navigateTo("users")} icon={<Users />} label="Manajemen User" />
-                )}
-                
-                {profile?.role === 'admin' && (
-                  <NavItem active={activeTab === "export-center"} onClick={() => navigateTo("export-center")} icon={<Download />} label="Pusat Ekspor" />
-                )}
-                
-                {(profile?.role === 'admin' || profile?.role === 'co-admin') && (
-                  <NavItem active={activeTab === "reports"} onClick={() => navigateTo("reports")} icon={<FileSpreadsheet />} label="Laporan" />
-                )}
-                
-                {profile?.role === 'admin' && (
-                  <NavItem active={activeTab === "activity-log"} onClick={() => navigateTo("activity-log")} icon={<History />} label="Log Aktivitas" />
-                )}
-                
-                {profile?.role === 'admin' && (
-                  <NavItem active={activeTab === "settings"} onClick={() => navigateTo("settings")} icon={<Database />} label="Pengaturan" />
-                )}
-              </nav>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Sidebar - Desktop */}
-      <aside className="hidden md:flex w-72 flex-col border-r border-slate-800 bg-slate-900 sticky top-20 h-[calc(100vh-80px)] p-6 z-30">
-
-        <nav className="flex-1 flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-2">
-          <NavItem active={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")} icon={<BarChart3 />} label="Dashboard" />
-          <NavItem active={activeTab === "input-ritase"} onClick={() => setActiveTab("input-ritase")} icon={<Truck />} label="Input Ritase" />
-          <NavItem active={activeTab === "trips"} onClick={() => setActiveTab("trips")} icon={<ClipboardList />} label="Data Ritase" />
-          
-          <div className="mt-4 mb-2">
-            <button 
-              onClick={() => setDbExpanded(!dbExpanded)}
-              className="w-full flex items-center justify-between px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <Database className="w-3 h-3" />
-                Master Database
-              </div>
-              {dbExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-            <AnimatePresence>
-              {dbExpanded && (
-                <motion.div 
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden flex flex-col gap-1 mt-1 pl-2"
-                >
-                  <NavItem active={activeTab === "vehicles"} onClick={() => setActiveTab("vehicles")} icon={<Truck />} label="Kendaraan" isSub />
-                  <NavItem active={activeTab === "drivers"} onClick={() => setActiveTab("drivers")} icon={<UserRound />} label="Personil" isSub />
-                  <NavItem active={activeTab === "upt-master"} onClick={() => setActiveTab("upt-master")} icon={<Building2 />} label="UPT" isSub />
-                  <NavItem active={activeTab === "tpa"} onClick={() => setActiveTab("tpa")} icon={<MapPin />} label="TPA/TPS" isSub />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {(profile?.role === 'admin' || profile?.role === 'co-admin') && (
-            <NavItem active={activeTab === "users"} onClick={() => setActiveTab("users")} icon={<Users />} label="Manajemen User" />
-          )}
-
-          {profile?.role === 'admin' && (
-            <NavItem active={activeTab === "export-center"} onClick={() => setActiveTab("export-center")} icon={<Download />} label="Pusat Ekspor" />
-          )}
-
-          {(profile?.role === 'admin' || profile?.role === 'co-admin') && (
-            <NavItem active={activeTab === "reports"} onClick={() => setActiveTab("reports")} icon={<FileSpreadsheet />} label="Laporan" />
-          )}
-
-          {profile?.role === 'admin' && (
-            <NavItem active={activeTab === "activity-log"} onClick={() => setActiveTab("activity-log")} icon={<History />} label="Log Aktivitas" />
-          )}
-
-          {profile?.role === 'admin' && (
-            <NavItem active={activeTab === "settings"} onClick={() => setActiveTab("settings")} icon={<Database />} label="Pengaturan" />
-          )}
-        </nav>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 px-4 py-6 md:px-10 md:py-8 overflow-x-hidden">
-
-        <AnimatePresence mode="wait">
+    <>
+      <AppLayout
+        user={user}
+        profile={profile}
+      vehicles={vehicles}
+      drivers={drivers}
+      settings={settings}
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      isMobileMenuOpen={isMobileMenuOpen}
+      setIsMobileMenuOpen={setIsMobileMenuOpen}
+      isProfileOpen={isProfileOpen}
+      setIsProfileOpen={setIsProfileOpen}
+      dbExpanded={dbExpanded}
+      setDbExpanded={setDbExpanded}
+      onShowChangePassword={() => setShowChangePassword(true)}
+      onCheckUpdates={() => updateCheckerRef.current?.checkUpdates(true)}
+      onSignOut={async () => {
+        if (profile) {
+          await logActivity('login', 'logout', 'Autentikasi', 'Pengguna keluar dari sistem', { profile });
+        }
+        signOut(auth);
+      }}
+    >
+      <AnimatePresence mode="wait">
           {activeTab === "dashboard" && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <DashboardView 
+              <MainDashboardView 
                 trips={trips} 
                 profile={profile} 
                 upts={upts} 
@@ -1328,6 +745,11 @@ export default function App() {
                 tripFilterRange={tripFilterRange}
                 setTripFilterRange={setTripFilterRange}
               />
+            </motion.div>
+          )}
+          {activeTab === "bakung" && (profile?.role === 'admin' || profile?.role === 'co-admin' || profile?.role === 'operator_bakung') && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+              <BakungDashboardView profile={profile} onNotify={notify} upts={upts} vehicles={vehicles} logActivity={logActivity} />
             </motion.div>
           )}
           {activeTab === "input-ritase" && (
@@ -1342,6 +764,7 @@ export default function App() {
                 vehicles={vehicles}
                 setActiveTab={setActiveTab}
                 trips={trips}
+                logActivity={logActivity}
               />
             </motion.div>
           )}
@@ -1360,17 +783,35 @@ export default function App() {
                 users={users}
                 tripFilterRange={tripFilterRange}
                 setTripFilterRange={setTripFilterRange}
+                logActivity={logActivity}
               />
             </motion.div>
           )}
           {activeTab === "vehicles" && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <VehiclesView vehicles={vehicles} onNotify={notify} upts={upts} profile={profile} drivers={drivers} trips={trips} settings={settings} />
+              <VehiclesView 
+                vehicles={vehicles} 
+                onNotify={notify} 
+                upts={upts} 
+                profile={profile} 
+                drivers={drivers} 
+                trips={trips} 
+                settings={settings} 
+                logActivity={logActivity}
+              />
             </motion.div>
           )}
           {activeTab === "drivers" && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <DriversView drivers={drivers} onNotify={notify} upts={upts} profile={profile} vehicles={vehicles} settings={settings} />
+              <DriversView 
+                drivers={drivers} 
+                onNotify={notify} 
+                upts={upts} 
+                profile={profile} 
+                vehicles={vehicles} 
+                settings={settings} 
+                logActivity={logActivity}
+              />
             </motion.div>
           )}
           {activeTab === "upt-master" && (
@@ -1389,17 +830,25 @@ export default function App() {
                   setGlobalEditDriver(d);
                   setShowGlobalDriverModal(true);
                 }}
+                logActivity={logActivity}
               />
             </motion.div>
           )}
           {activeTab === "tpa" && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <TpaTpsView tpas={tpas} tps={tps} onNotify={notify} settings={settings} profile={profile} />
+              <TpasTpsView 
+                tpas={tpas} 
+                tps={tps} 
+                onNotify={notify} 
+                settings={settings} 
+                profile={profile} 
+                logActivity={logActivity}
+              />
             </motion.div>
           )}
           {activeTab === "users" && (profile?.role === 'admin' || profile?.role === 'co-admin') && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <UsersView users={users} profile={profile} onNotify={notify} upts={upts} onResetPasswordSuccess={(data: any) => setResetSuccessData(data)} />
+              <UsersView users={users} profile={profile} onNotify={notify} upts={upts} onResetPasswordSuccess={(data: any) => setResetSuccessData(data)} logActivity={logActivity} />
             </motion.div>
           )}
           {activeTab === "export-center" && (profile?.role === 'admin') && (
@@ -1417,7 +866,7 @@ export default function App() {
               />
             </motion.div>
           )}
-          {activeTab === "reports" && (profile?.role === 'admin' || profile?.role === 'co-admin') && (
+          {activeTab === "reports" && (profile?.role === 'admin' || (profile?.role === 'co-admin' && settings?.showReportsForCoAdmin === true)) && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
               <ReportsView 
                 trips={trips} 
@@ -1430,6 +879,7 @@ export default function App() {
                 setTripFilterRange={setTripFilterRange}
                 reportsCache={reportsCache}
                 setReportsCache={setReportsCache}
+                logActivity={logActivity}
               />
             </motion.div>
           )}
@@ -1440,11 +890,11 @@ export default function App() {
           )}
           {activeTab === "settings" && (profile?.role === 'admin') && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <GlobalSettingsView onNotify={notify} settings={settings} tpas={tpas} profile={profile} />
+              <SettingsView onNotify={notify} settings={settings} tpas={tpas} profile={profile} logActivity={logActivity} />
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
+    </AppLayout>
 
       {/* Notifications */}
       <AnimatePresence>
@@ -1496,14 +946,15 @@ export default function App() {
         onNotify={notify}
         isForced={profile?.force_password_change}
       />
-    </div>
-  </div>
+
+      <UpdateNotification ref={updateCheckerRef} onNotify={notify} />
+    </>
   );
 }
 
 // --- Global Modals ---
 
-function VehicleEditModal({ isOpen, onClose, isEditing, upts, drivers, onNotify, profile, onSuccess }: any) {
+function VehicleEditModal_Deprecated({ isOpen, onClose, isEditing, upts, drivers, onNotify, profile, onSuccess }: any) {
   const [loading, setLoading] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [modalUpts, setModalUpts] = useState<string[]>([]);
@@ -1780,7 +1231,7 @@ function VehicleEditModal({ isOpen, onClose, isEditing, upts, drivers, onNotify,
   );
 }
 
-function DriverEditModal({ isOpen, onClose, isEditing, upts, vehicles, onNotify, profile, onSuccess }: any) {
+function DriverEditModal_Deprecated({ isOpen, onClose, isEditing, upts, vehicles, onNotify, profile, onSuccess }: any) {
   const [loading, setLoading] = useState(false);
   const [modalUpts, setModalUpts] = useState<string[]>([]);
   const [jabatan, setJabatan] = useState("");
@@ -1947,253 +1398,7 @@ function DriverEditModal({ isOpen, onClose, isEditing, upts, vehicles, onNotify,
     </div>
   );
 }
-
 // --- View Components ---
-
-function LoginPage({ onNotify }: { onNotify: (t: 'success' | 'error', m: string) => void }) {
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError(null);
-    
-    if (isRegistering && password.length < 6) {
-      setLoginError('Kata sandi harus minimal 6 karakter.');
-      return;
-    }
-
-    setLoading(true);
-    const trimmedEmail = email.trim();
-    const trimmedPassword = password.trim();
-
-    if (isRegistering && trimmedPassword.length < 6) {
-      setLoginError('Kata sandi harus minimal 6 karakter.');
-      setLoading(false);
-      return;
-    }
-
-    // Convert username to a dummy email for Firebase Auth
-    const internalEmail = trimmedEmail.includes('@') ? trimmedEmail : `${trimmedEmail}@ritase.dlh`;
-    
-    try {
-      if (isRegistering) {
-        // Validation for registration
-        if (!name.trim()) {
-          setLoginError('Nama Akun / Entitas wajib diisi.');
-          setLoading(false);
-          return;
-        }
-
-        let userCredential;
-        try {
-          userCredential = await createUserWithEmailAndPassword(auth, internalEmail, trimmedPassword);
-        } catch (authError: any) {
-          console.error("Auth creation failed for:", internalEmail, authError);
-          let message = "Gagal membuat akun autentikasi.";
-          if (authError.code === 'auth/email-already-in-use') {
-            message = "Username/Email sudah digunakan. Silakan gunakan yang lain.";
-          } else if (authError.code === 'auth/weak-password') {
-            message = "Password terlalu lemah (min. 6 karakter).";
-          } else if (authError.code === 'auth/invalid-email') {
-            message = "Format username/email tidak valid.";
-          }
-          setLoginError(message);
-          setLoading(false);
-          return;
-        }
-        
-        // At this point, account is created in Auth. Now create Firestore profile.
-        // If profile creation fails, we must rollback (delete) the Auth account.
-        try {
-          const profileData: UserProfile = {
-            userId: userCredential.user.uid,
-            username: trimmedEmail,
-            email: internalEmail,
-            role: (internalEmail === "bpsdlh@gmail.com" || trimmedEmail === "bpsdlh") ? "admin" : "user",
-            account_name: name.trim(),
-            operator_name: "",
-            status: 'active',
-            assigned_upt_id: "",
-            assigned_upt_name: "",
-            createdAt: serverTimestamp()
-          };
-
-          console.log("Attempting to write User Profile:", JSON.stringify(profileData));
-          await setDoc(doc(db, "users", userCredential.user.uid), profileData);
-          onNotify('success', 'Akun berhasil dibuat dan profil disinkronkan!');
-        } catch (dbError: any) {
-          console.error("CRITICAL: Firestore profile creation failed.", dbError);
-          
-          // ROLLBACK
-          try {
-            await deleteUser(userCredential.user);
-            console.log("Auth account rollback successful after Firestore failure.");
-          } catch (rollbackError) {
-            console.error("Auth account rollback FAILED. Orphan account created:", rollbackError);
-          }
-
-          let message = "Gagal sinkronisasi data profil. Akun dibatalkan demi keamanan.";
-          if (dbError.message?.includes('permission-denied') || dbError.code === 'permission-denied') {
-            message = "Akses ditolak (Security Rules). Periksa apakah field yang dikirim valid.";
-          }
-          setLoginError(message);
-          // Re-throw with mandatory handler for system diagnostics
-          handleFirestoreError(dbError, OperationType.CREATE, `users/${userCredential.user.uid}`);
-        }
-      } else {
-        await signInWithEmailAndPassword(auth, internalEmail, trimmedPassword);
-        onNotify('success', 'Selamat datang kembali!');
-      }
-    } catch (error: any) {
-      console.error("Auth error for:", internalEmail, error);
-      let message = "Terjadi kesalahan. Silakan coba lagi.";
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials') {
-        message = "Username atau password yang Anda masukkan salah.";
-      } else if (error.code === 'auth/email-already-in-use') {
-        message = "Email sudah terdaftar.";
-      } else if (error.code === 'auth/weak-password') {
-        message = "Password terlalu lemah (min. 6 karakter).";
-      } else if (error.code === 'auth/operation-not-allowed') {
-        message = "Metode login Email/Password belum diaktifkan di Firebase Console.";
-      } else if (error.code === 'auth/invalid-email') {
-        message = "Format email tidak valid.";
-      } else if (error.code === 'auth/too-many-requests') {
-        message = "Terlalu banyak percobaan login. Coba lagi beberapa saat.";
-      } else if (error.code === 'auth/user-disabled') {
-        message = "Akun ini telah dinonaktifkan.";
-      } else if (error.code === 'auth/network-request-failed') {
-        message = "Gagal terhubung ke server. Periksa koneksi internet Anda.";
-      }
-      setLoginError(message);
-      
-      // Clear password field on error
-      setPassword("");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 p-6 relative overflow-x-hidden">
-      <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 w-[400px] md:w-[600px] h-[400px] md:h-[600px] bg-emerald-900/10 rounded-full blur-[80px] md:blur-[120px] opacity-40 shrink-0" />
-      <div className="absolute bottom-0 left-0 translate-y-1/2 -translate-x-1/2 w-[400px] md:w-[600px] h-[400px] md:h-[600px] bg-blue-900/10 rounded-full blur-[80px] md:blur-[120px] opacity-40 shrink-0" />
-
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md z-10 mx-auto"
-      >
-        <Card className="p-8 border-slate-800 bg-slate-900/80 backdrop-blur-xl shadow-2xl">
-          <div className="flex flex-col items-center mb-8 w-full text-center">
-            <Logo size="lg" className="mb-6 shadow-xl shadow-emerald-500/10" />
-            <div className="w-full space-y-2">
-              <h1 className="text-3xl font-black text-white tracking-tighter leading-none">{APP_NAME}</h1>
-              <div className="max-w-[280px] mx-auto px-1">
-                <p className="text-slate-400 font-bold text-[10px] sm:text-[11px] tracking-wider uppercase leading-tight whitespace-normal break-words">
-                  {APP_FULL_NAME}
-                </p>
-              </div>
-              <p className="text-emerald-500 font-mono text-[8px] sm:text-[9px] tracking-[0.2em] uppercase font-bold">{APP_ORG}</p>
-            </div>
-          </div>
-
-          <h2 className="text-lg font-bold text-white mb-6 text-center border-b border-slate-800 pb-4">
-            {isRegistering ? "Pendaftaran Personil" : "Login Portal Sistem"}
-          </h2>
-          
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {loginError && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-xl p-3 flex items-start gap-3"
-              >
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <p className="text-[11px] font-bold leading-tight uppercase tracking-wide text-left">{loginError}</p>
-              </motion.div>
-            )}
-
-            {isRegistering && (
-              <Input 
-                label="Nama Akun / Entitas" 
-                placeholder="Contoh: UPT Kedaton"
-                value={name}
-                onChange={(e: any) => { setName(e.target.value); if(loginError) setLoginError(null); }}
-                icon={<Building2 className="w-4 h-4" />}
-                required
-              />
-            )}
-            <Input 
-              label="Username Akun" 
-              placeholder="Contoh: bidangps atau unit01"
-              value={email}
-              onChange={(e: any) => { setEmail(e.target.value); if(loginError) setLoginError(null); }}
-              icon={<User className="w-4 h-4" />}
-              required
-            />
-            <Input 
-              label="Kata Sandi" 
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e: any) => { setPassword(e.target.value); if(loginError) setLoginError(null); }}
-              icon={<Lock className="w-4 h-4" />}
-              required
-            />
-            {isRegistering && (
-              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider -mt-2 ml-1">
-                Minimal 6 karakter
-              </p>
-            )}
-
-            <Button type="submit" disabled={loading} className="w-full h-12 mt-4 text-sm uppercase tracking-widest font-bold">
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
-                <>
-                  {isRegistering ? "Registrasi" : "Masuk"}
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </Button>
-          </form>
-
-          <div className="mt-8 text-center">
-            <button 
-              onClick={() => { setIsRegistering(!isRegistering); setLoginError(null); }}
-              className="text-[10px] font-bold text-slate-500 hover:text-emerald-500 uppercase tracking-widest transition-colors"
-            >
-              {isRegistering ? "Sudah punya akun? Login di sini" : "Personil Baru? Registrasi Akun"}
-            </button>
-          </div>
-        </Card>
-
-        <p className="mt-8 text-center text-[10px] text-slate-700 font-mono tracking-[0.3em] uppercase">
-          &copy; {new Date().getFullYear()} {APP_ORG_SHORT}
-        </p>
-      </motion.div>
-    </div>
-  );
-}
-
-function NavItem({ active, onClick, icon, label, isSub }: any) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
-        active 
-          ? "bg-emerald-600/10 text-emerald-400 shadow-sm border border-emerald-500/20" 
-          : "text-slate-500 hover:bg-slate-800 hover:text-slate-200"
-      } ${isSub ? 'py-2 px-3 text-xs' : ''}`}
-    >
-      {React.cloneElement(icon, { className: isSub ? "w-4 h-4" : "w-5 h-5" })}
-      <span className={isSub ? 'text-xs' : 'text-sm'}>{label}</span>
-    </button>
-  );
-}
 
 function ExportCenterView({ profile, onNotify }: any) {
   const [isExporting, setIsExporting] = useState(false);
@@ -2696,1505 +1901,10 @@ function ActivityLogView({ profile }: any) {
   );
 }
 
-function DashboardView({ trips: propTrips, profile, onAddClick, upts, tpas, settings, tripFilterRange, setTripFilterRange }: any) {
-  const trips = useMemo(() => {
-    if (profile?.role === 'user' && !settings?.visualDataRitase) {
-      const userUpt = profile?.assigned_upt_name || profile?.uptName || profile?.upt || "";
-      return propTrips.filter((t: any) => t.upt === userUpt);
-    }
-    return propTrips;
-  }, [propTrips, profile, settings]);
 
-  const isWeightEnabled = settings?.enableWeight !== false;
-  const showVolume = settings?.showVolume !== false;
 
-  const mainTpa = tpas.find((t: any) => t.id === settings?.mainTpaId);
-  const mainTpaName = mainTpa ? mainTpa.name : (tpas.length > 0 ? "Belum Diatur" : "-");
 
-  // Filter Strings
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
-
-  // Ritase Logic (Hari Ini)
-  const ritaseToday = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.tripCount || 1), 0);
-  const tonnageToday = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.tonnage || 0), 0) / 1000;
-  const volumeToday = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.volume || 0), 0);
-
-  // Total stats for subvalues
-  const totalVolume = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.volume || 0), 0);
-  const totalRitase = trips.filter((t: any) => t.date === todayStr).reduce((acc: number, t: any) => acc + (t.tripCount || 1), 0);
-  const ritaseSubValue = `${totalRitase} Rit`;
-  
-  // Last 7 days chart data calculation (simple)
-  const last7Days = Array.from({ length: 7 }).map((_, i) => {
-    const d = format(new Date(Date.now() - i * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
-    const dayTrips = trips.filter((t: any) => t.date === d);
-    return {
-      date: d,
-      ritase: dayTrips.reduce((acc: number, t: any) => acc + (t.tripCount || 1), 0)
-    };
-  }).reverse();
-
-  return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Dashboard Hari Ini</h2>
-          <p className="text-slate-500 text-sm">Ringkasan operasional pengelolaan sampah hari ini.</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        <StatsCard 
-          label="Tonase Hari Ini"
-          value={`${tonnageToday.toFixed(2)} Ton`} 
-          subValue={showVolume ? `${volumeToday.toFixed(1)} m³` : undefined}
-          icon={<BarChart3 className="text-emerald-500" />} 
-        />
-        <StatsCard 
-          label="Ritase Hari Ini" 
-          value={`${ritaseToday} Rit`} 
-          icon={<ClipboardList className="text-blue-500" />} 
-        />
-        <div className="col-span-2 lg:col-span-1">
-          <StatsCard label="TPA Utama" value={mainTpaName} icon={<MapPin className="text-orange-500" />} />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <Card className="lg:col-span-2 p-6 bg-slate-900 border-slate-800">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-bold text-slate-200">Input Terkini</h3>
-            <span className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">LOG RITASE TERAKHIR</span>
-          </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-        {trips.sort((a: any, b: any) => {
-          if (a.date !== b.date) return b.date.localeCompare(a.date);
-          if (a.operationalTime && b.operationalTime) return b.operationalTime.localeCompare(a.operationalTime);
-          return (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0);
-        }).slice(0, 10).map((trip: any) => (
-          <div key={trip.id} className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-xl border border-slate-800 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all cursor-default group">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-slate-800 rounded-lg flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
-              <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] sm:text-sm font-bold text-slate-200 truncate">{trip.driverName}</p>
-              <div className="flex items-center gap-1 sm:gap-2">
-                <p className="text-[8px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-tight whitespace-nowrap">{trip.upt}</p>
-                <span className="text-[8px] text-slate-700">•</span>
-                <p className="text-[8px] sm:text-[10px] text-emerald-600 font-mono font-bold tracking-tighter">{trip.vehiclePlate}</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] sm:text-xs font-bold text-slate-300">{trip.tripCount} Rit</p>
-              <p className="text-[8px] sm:text-[9px] text-slate-600 font-mono">{format(new Date(trip.date.replace(/-/g, '/')), 'dd MMM')}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-          <Button variant="ghost" onClick={onAddClick} className="w-full mt-6 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-emerald-500">Lihat Semua Data Ritase</Button>
-        </Card>
-
-        <Card className="lg:col-span-1 p-6 bg-slate-900 border-slate-800 flex flex-col">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="font-bold text-slate-200">Aktivitas 7 Hari</h3>
-            <div className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">TREND RITASE</div>
-          </div>
-          
-          <div className="flex-1 min-h-[250px] w-full min-w-0 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height={250}>
-              <AreaChart data={last7Days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorRitase" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis 
-                  dataKey="date" 
-                  tickFormatter={(str) => format(new Date(str), 'EEE')}
-                  stroke="#475569"
-                  fontSize={10}
-                  fontWeight="bold"
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis 
-                  stroke="#475569"
-                  fontSize={10}
-                  fontWeight="bold"
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontSize: '12px' }}
-                  itemStyle={{ color: '#10b981', fontWeight: 'bold' }}
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="ritase" 
-                  stroke="#10b981" 
-                  strokeWidth={3}
-                  fillOpacity={1} 
-                  fill="url(#colorRitase)" 
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-slate-800">
-            <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500">
-              <span>Total 7 Hari Terakhir</span>
-              <span className="text-emerald-500">{last7Days.reduce((acc, d) => acc + d.ritase, 0)} Rit</span>
-            </div>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function StatsCard({ label, value, subValue, icon, onClick }: any) {
-  return (
-    <Card 
-      onClick={onClick}
-      className={`p-4 sm:p-6 overflow-hidden relative group bg-slate-900 border-slate-800 transition-all ${onClick ? 'cursor-pointer hover:bg-slate-800/80 hover:border-emerald-500/30' : ''}`}
-    >
-      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 group-hover:opacity-20 transition-all hidden sm:block">
-        {React.cloneElement(icon, { size: 48 })}
-      </div>
-      <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 truncate">{label}</p>
-      <div className="flex flex-col">
-        <h3 className="text-xl sm:text-3xl font-light text-white truncate">{value}</h3>
-        {subValue && <p className="text-[10px] sm:text-xs text-slate-500 mt-1 truncate">{subValue}</p>}
-      </div>
-      {onClick && (
-        <div className="absolute bottom-2 right-3 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-          <div className="flex items-center gap-1 text-[8px] font-bold text-emerald-500 uppercase tracking-tighter">
-            <span className="hidden sm:inline">Klik untuk Ganti</span>
-            <ArrowRight className="w-2 h-2" />
-          </div>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function TripForm({ initialData, onSubmit, onCancel, loading, upts, tpas, settings, profile, drivers, vehicles, trips, onNotify }: any) {
-  const [tonnageKg, setTonnageKg] = useState(initialData?.tonnage || 0);
-  const [volume, setVolume] = useState(initialData?.volume || 0);
-  const [selectedUpt, setSelectedUpt] = useState(initialData?.upt || (profile?.assigned_upt_name || profile?.uptName || profile?.upt || (upts.length > 0 ? upts[0].name : "")));
-  const [tonnageWarning, setTonnageWarning] = useState("");
-
-  useEffect(() => {
-    if (profile?.role === 'user' && !initialData) {
-      setSelectedUpt(profile?.assigned_upt_name || profile?.uptName || profile?.upt || "");
-    }
-  }, [profile, initialData]);
-  const [selectedDate, setSelectedDate] = useState(initialData?.date || format(new Date(), 'yyyy-MM-dd'));
-
-  const mainTpa = tpas.find((t: any) => t.id === settings?.mainTpaId);
-  const isLocked = settings?.isTpaLocked;
-
-  const defaultTpaName = initialData?.tpa || mainTpa?.name || (tpas.length > 0 ? tpas[0].name : "");
-
-  const [formData, setFormData] = useState({
-    driverName: initialData?.driverName || "",
-    vehiclePlate: initialData?.vehiclePlate || "",
-    tpa: initialData?.tpa || defaultTpaName,
-    keterangan: initialData?.keterangan || ""
-  });
-
-  const [showAllDrivers, setShowAllDrivers] = useState(false);
-  const [showAllVehicles, setShowAllVehicles] = useState(false);
-
-  useEffect(() => {
-    if (initialData) {
-      setFormData({
-        driverName: initialData.driverName || "",
-        vehiclePlate: initialData.vehiclePlate || "",
-        tpa: initialData.tpa || defaultTpaName,
-        keterangan: initialData.keterangan || ""
-      });
-      setTonnageKg(initialData.tonnage || 0);
-      setVolume(initialData.volume || 0);
-      setSelectedUpt(initialData.upt || (profile?.assigned_upt_name || profile?.uptName || profile?.upt || (upts.length > 0 ? upts[0].name : "")));
-      setSelectedDate(initialData.date);
-    }
-  }, [initialData]);
-
-  // Auto-populate tonnage based on ritase configuration with circular logic
-  useEffect(() => {
-    if (!formData.vehiclePlate || !selectedDate || !formData.driverName || initialData) {
-      setTonnageWarning("");
-      return;
-    }
-    
-    // Group by vehicle, driver, and UPT as requested
-    const dailyTrips = trips.filter((t: any) => 
-      t.vehiclePlate === formData.vehiclePlate && 
-      t.date === selectedDate &&
-      t.driverName === formData.driverName &&
-      t.upt === selectedUpt
-    );
-    
-    const nextRitNum = dailyTrips.length + 1;
-    const vehicle = vehicles.find((v: any) => v.plateNumber === formData.vehiclePlate);
-    
-    if (!vehicle || !vehicle.ritaseTonnage) {
-      setTonnageWarning("Tonase default kendaraan belum tersedia. Periksa Database Kendaraan.");
-      return;
-    }
-
-    // Resolve target configuration
-    // Order: Vehicle's home UPTs -> "default" -> first numeric object -> legacy flat
-    const homeUpts = vehicle.upts || (vehicle.upt ? [vehicle.upt] : []);
-    let targetConfig = null;
-
-    // 1. Try Home UPTs
-    for (const hUpt of homeUpts) {
-      if (vehicle.ritaseTonnage[hUpt]) {
-        targetConfig = vehicle.ritaseTonnage[hUpt];
-        break;
-      }
-    }
-
-    // 2. Try "default"
-    if (!targetConfig) {
-      targetConfig = vehicle.ritaseTonnage["default"];
-    }
-
-    // 3. Try first key that contains numeric entries
-    if (!targetConfig || typeof targetConfig !== 'object' || Object.keys(targetConfig).length === 0) {
-      const firstValidKey = Object.keys(vehicle.ritaseTonnage).find(k => 
-        typeof (vehicle.ritaseTonnage as any)[k] === 'object' && 
-        Object.keys((vehicle.ritaseTonnage as any)[k]).some(sk => !isNaN(Number(sk)))
-      );
-      if (firstValidKey) targetConfig = (vehicle.ritaseTonnage as any)[firstValidKey];
-    }
-
-    // 5. Legacy Fallback (flat object)
-    if (!targetConfig || typeof targetConfig !== 'object' || Object.keys(targetConfig).length === 0) {
-      targetConfig = vehicle.ritaseTonnage;
-    }
-
-    if (!targetConfig || typeof targetConfig !== 'object' || Object.keys(targetConfig).length === 0) {
-      setTonnageWarning("Tonase default kendaraan belum tersedia. Periksa Database Kendaraan.");
-      return;
-    }
-
-    const ritaseKeys = Object.keys(targetConfig).map(Number).filter(k => !isNaN(k)).sort((a, b) => a - b);
-    if (ritaseKeys.length > 0) {
-      const circularIndex = (nextRitNum - 1) % ritaseKeys.length;
-      const targetKey = ritaseKeys[circularIndex];
-      const tonnage = (targetConfig as any)[targetKey];
-      if (typeof tonnage === 'number') {
-        handleKgChange(tonnage);
-        setTonnageWarning("");
-        return;
-      }
-    }
-    
-    setTonnageWarning("Tonase default kendaraan belum tersedia. Periksa Database Kendaraan.");
-  }, [formData.vehiclePlate, formData.driverName, selectedDate, trips, vehicles, initialData, selectedUpt]);
-
-  const [isFlexible, setIsFlexible] = useState(false);
-
-  // Sync driver and vehicle
-  const handleVehicleChange = (plate: string) => {
-    setFormData(prev => ({
-      ...prev,
-      vehiclePlate: plate
-    }));
-
-    if (!isFlexible && plate) {
-      const vehicle = vehicles.find((v: any) => v.plateNumber === plate);
-      const matchingDrivers = drivers.filter((d: any) => 
-        d.vehiclePlate === plate && 
-        (d.upts?.includes(selectedUpt) || d.upt === selectedUpt)
-      );
-      
-      let driverToSet = matchingDrivers.length === 1 ? matchingDrivers[0].name : (vehicle?.defaultDriverName || "");
-      if (driverToSet) {
-        setFormData(prev => ({ ...prev, driverName: driverToSet }));
-      }
-    }
-  };
-
-  const handleDriverChange = (name: string) => {
-    setFormData(prev => ({
-      ...prev,
-      driverName: name
-    }));
-
-    if (!isFlexible && name) {
-      const driver = drivers.find((d: any) => d.name === name);
-      const assignedVehicle = vehicles.find((v: any) => 
-        v.defaultDriverName === name && 
-        (v.upts?.includes(selectedUpt) || v.upt === selectedUpt)
-      );
-      
-      let vehicleToSet = driver?.vehiclePlate || (assignedVehicle?.plateNumber || "");
-      if (vehicleToSet) {
-        setFormData(prev => ({ ...prev, vehiclePlate: vehicleToSet }));
-      }
-    }
-  };
-
-  const handleKgChange = (kg: number) => {
-    setTonnageKg(kg);
-    // Auto sync volume: KG / 400 (using standard 0.4 density: Ton / 0.4 = Vol)
-    // kg / 1000 / 0.4 = kg / 400
-    const calculatedVol = parseFloat((kg / 400).toFixed(1));
-    setVolume(calculatedVol);
-  };
-
-  const [submitAttempted, setSubmitAttempted] = useState(false);
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setSubmitAttempted(true);
-    const fData = new FormData(e.currentTarget);
-    const vehiclePlate = formData.vehiclePlate;
-    const vehicle = vehicles.find((v: any) => v.plateNumber === vehiclePlate);
-
-    if (tonnageKg === 0 && tonnageWarning && !initialData) {
-      if (onNotify) onNotify('error', tonnageWarning);
-      return;
-    }
-
-    const data = {
-      date: fData.get("date") as string,
-      operationalTime: fData.get("operationalTime") as string,
-      vehiclePlate: vehiclePlate,
-      vehicleType: vehicle?.type || "Lainnya",
-      driverName: formData.driverName,
-      upt: selectedUpt,
-      tpa: isLocked ? defaultTpaName : formData.tpa,
-      tonnage: (tonnageKg || 0),
-      volume: volume || 0,
-      tripCount: 1, 
-      keterangan: fData.get("keterangan") as string
-    };
-    onSubmit(data);
-  };
-
-  const filteredDrivers = (showAllDrivers || isFlexible) ? drivers : drivers.filter((d: any) => {
-    if (selectedUpt === "") {
-      return (!d.upts || d.upts.length === 0) && (!d.upt || !upts.some((u: any) => u.name === d.upt));
-    }
-    return d.upts?.includes(selectedUpt) || d.upt === selectedUpt;
-  });
-  
-  const filteredVehicles = (showAllVehicles || isFlexible) ? vehicles : vehicles.filter((v: any) => {
-    if (selectedUpt === "") {
-      return (!v.upts || v.upts.length === 0) && (!v.upt || !upts.some((u: any) => u.name === v.upt));
-    }
-    return v.upts?.includes(selectedUpt) || v.upt === selectedUpt;
-  });
-
-  const isWeightEnabled = settings?.enableWeight !== false;
-  const showWeightInForm = settings?.showWeightInForm !== false;
-  const actualShowWeight = isWeightEnabled && showWeightInForm;
-  const showVolume = settings?.showVolume !== false;
-
-  return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Input 
-          label="Tanggal Log" 
-          type="date" 
-          name="date" 
-          required 
-          showError={submitAttempted && !selectedDate}
-          value={selectedDate}
-          onChange={(e: any) => setSelectedDate(e.target.value)}
-        />
-        <Input 
-          label="Jam Operasional" 
-          type="time" 
-          name="operationalTime" 
-          required 
-          showError={submitAttempted && !(initialData?.operationalTime || format(new Date(), 'HH:mm'))}
-          defaultValue={initialData?.operationalTime || format(new Date(), 'HH:mm')} 
-        />
-      </div>
-      
-      <Select 
-        label="Wilayah UPT" 
-        name="upt" 
-        options={[
-          { label: "Tanpa UPT / Data Arsip", value: "" },
-          ...upts.map((u: any) => ({ label: u.name, value: u.name }))
-        ]} 
-        required 
-        showError={submitAttempted && selectedUpt === undefined}
-        value={selectedUpt}
-        onChange={(e: any) => setSelectedUpt(e.target.value)}
-        disabled={profile?.role === 'user'}
-      />
-
-      {(profile?.role === 'admin' || profile?.role === 'co-admin' || profile?.role === 'user') && (
-        <div className="flex items-center justify-between bg-slate-950/50 p-4 rounded-2xl border border-slate-800 shadow-inner group transition-all hover:bg-slate-950">
-          <div className="flex items-center gap-4">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isFlexible ? 'bg-orange-500/10 text-orange-500 ring-2 ring-orange-500/20 shadow-lg shadow-orange-500/10' : 'bg-emerald-500/10 text-emerald-500 ring-2 ring-emerald-500/20 shadow-lg shadow-emerald-500/10'}`}>
-              {isFlexible ? <Unlock className="w-5 h-5 animate-pulse" /> : <Lock className="w-5 h-5" />}
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 leading-none mb-1">Status Sinkronisasi</p>
-              <p className="text-sm font-bold text-white tracking-tight">{isFlexible ? "Mode Fleksibel" : "Mode Otomatis Terkunci"}</p>
-              <p className="text-[10px] text-slate-500 font-medium">{isFlexible ? "Personil & Kendaraan bisa dipilih bebas (lintas UPT)" : "Kendaraan otomatis mengikuti personil & berdasarkan UPT"}</p>
-            </div>
-          </div>
-          <button 
-            type="button"
-            onClick={() => setIsFlexible(!isFlexible)}
-            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isFlexible ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}`}
-          >
-            {isFlexible ? "Aktifkan Cerdas" : "Buka Fleksibel"}
-          </button>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Sopir</span>
-            {(profile?.role === 'admin' || profile?.role === 'co-admin') && (
-              <button 
-                type="button"
-                onClick={() => setShowAllDrivers(!showAllDrivers)}
-                className={`text-[9px] px-2 py-0.5 rounded border transition-colors ${showAllDrivers ? 'bg-emerald-500/20 border-emerald-500 text-emerald-500' : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-400'}`}
-              >
-                {showAllDrivers ? "Hanya UPT Terpilih" : "Tampilkan Semua UPT"}
-              </button>
-            )}
-          </div>
-          <Select 
-            name="driverName" 
-            required 
-            value={formData.driverName}
-            onChange={(e: any) => handleDriverChange(e.target.value)}
-            options={filteredDrivers.map((d: any) => {
-              const info = [];
-              if (d.shift) info.push(d.shift);
-              if (showAllDrivers && d.upt) info.push(d.upt);
-              const labelSuffix = info.length > 0 ? ` (${info.join(' - ')})` : "";
-              
-              return {
-                label: `${d.name}${labelSuffix}`,
-                value: d.name
-              };
-            })}
-            placeholder="Pilih Sopir"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Kendaraan</span>
-            {(profile?.role === 'admin' || profile?.role === 'co-admin') && (
-              <button 
-                type="button"
-                onClick={() => setShowAllVehicles(!showAllVehicles)}
-                className={`text-[9px] px-2 py-0.5 rounded border transition-colors ${showAllVehicles ? 'bg-emerald-500/20 border-emerald-500 text-emerald-500' : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-400'}`}
-              >
-                {showAllVehicles ? "Hanya UPT Terpilih" : "Tampilkan Semua UPT"}
-              </button>
-            )}
-          </div>
-          <Select 
-            name="vehiclePlate" 
-            required 
-            value={formData.vehiclePlate}
-            onChange={(e: any) => handleVehicleChange(e.target.value)}
-            options={filteredVehicles.map((v: any) => ({
-              label: `${v.plateNumber} (${v.type})${showAllVehicles ? ` [${v.upt}]` : ''}`,
-              value: v.plateNumber
-            }))}
-            placeholder="Pilih Plat Nomor"
-          />
-        </div>
-      </div>
-
-      <Select 
-        label="Tujuan TPA" 
-        name="tpa" 
-        options={tpas.map((t: any) => t.name)} 
-        required 
-        value={isLocked ? defaultTpaName : (formData.tpa || defaultTpaName)}
-        onChange={(e: any) => setFormData({...formData, tpa: e.target.value})}
-        disabled={isLocked}
-      />
-      
-      {(actualShowWeight || showVolume) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-950/50 rounded-xl border border-slate-800">
-          {actualShowWeight && (
-            <div className="flex flex-col gap-2">
-              <Input 
-                label="Tonase (KG)" 
-                name="tonnageKg" 
-                type="number" 
-                required 
-                value={tonnageKg}
-                onChange={(e: any) => handleKgChange(parseFloat(e.target.value) || 0)} 
-                className={tonnageWarning ? "border-amber-500" : ""}
-              />
-              {tonnageWarning && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg animate-in fade-in slide-in-from-top-1">
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-tight">{tonnageWarning}</p>
-                </div>
-              )}
-            </div>
-          )}
-          {showVolume && (
-            <Input 
-              label="Volume (m³)" 
-              name="volume" 
-              type="number" 
-              required 
-              value={volume}
-              onChange={(e: any) => setVolume(parseFloat(e.target.value) || 0)} 
-            />
-          )}
-        </div>
-      )}
-
-      <Input 
-        label="Keterangan (Opsional)" 
-        name="keterangan" 
-        placeholder="Tambahkan catatan jika diperlukan..."
-        defaultValue={formData.keterangan}
-      />
-      
-      <div className="flex gap-4 pt-6 border-t border-slate-800">
-        {onCancel && <Button variant="secondary" className="flex-1" onClick={onCancel} type="button">Batal</Button>}
-        <Button type="submit" disabled={loading} className="flex-1">
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (initialData ? "Perbarui Log" : "Simpan Log Ritase")}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function InputRitaseView({ onNotify, upts, tpas, settings, profile, drivers, vehicles, setActiveTab, trips }: any) {
-  const [loading, setLoading] = useState(false);
-
-    const handleTripSubmit = async (data: any) => {
-    console.log("DEBUG: Creating Trip as", profile?.role, "with UID", auth.currentUser?.uid);
-    console.log("DEBUG: Current Profile:", JSON.stringify(profile, null, 2));
-    setLoading(true);
-    try {
-      const tripData = {
-        ...data,
-        createdBy: auth.currentUser?.uid,
-        created_by_upt_id: profile?.assigned_upt_id || profile?.uptId || "",
-        created_by_upt_name: profile?.assigned_upt_name || profile?.uptName || "",
-        created_by_user_name: profile?.operator_name || profile?.name || "",
-        created_by_username: profile?.username || "",
-        created_by_account_name: profile?.account_name || profile?.upt || "",
-        timestamp: serverTimestamp(),
-        created_at_timestamp: serverTimestamp(),
-        updated_at_timestamp: serverTimestamp(),
-        is_submission_approved: null,
-        approved_by: "",
-        approved_at: null,
-        submission_note: ""
-      };
-      
-      console.log("DEBUG: Trip Payload Data:", JSON.stringify(tripData, (key, value) => {
-        if (typeof value === 'object' && value !== null && 'type' in value && value.type === 'server_timestamp') return "SERVER_TIMESTAMP";
-        return value;
-      }, 2));
-      
-      const docRef = await addDoc(collection(db, "trips"), tripData);
-      
-      // Log Activity: Ritase Input
-      logActivity(
-        'operasional', 
-        'tambah_ritase', 
-        'Data Ritase', 
-        `Input data ritase baru: ${data.vehiclePlate} oleh ${data.driverName}`,
-        {
-          recordId: docRef.id,
-          recordLabel: data.vehiclePlate,
-          afterData: data,
-          profile
-        }
-      );
-
-      onNotify('success', 'Data ritase berhasil disimpan');
-      setActiveTab('trips');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, "trips");
-      onNotify('error', 'Gagal menyimpan data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="max-w-2xl mx-auto flex flex-col gap-8">
-      <div className="text-center">
-        <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-emerald-500/20 shadow-lg shadow-emerald-500/5">
-          <Truck className="w-8 h-8 text-emerald-500" />
-        </div>
-        <h2 className="text-3xl font-bold text-white tracking-tight">Input Ritase Baru</h2>
-        <p className="text-slate-500 mt-2">Pastikan semua data sudah sesuai dengan laporan armada.</p>
-      </div>
-
-      <Card className="p-8 bg-slate-900/50 backdrop-blur-xl border-slate-800 shadow-2xl relative overflow-hidden group">
-        <div className="absolute top-0 right-0 p-8 opacity-5">
-           <ClipboardList className="w-32 h-32 text-emerald-500" />
-        </div>
-        <TripForm 
-          onNotify={onNotify}
-          onSubmit={handleTripSubmit} 
-          onCancel={() => setActiveTab('trips')}
-          loading={loading}
-          upts={upts}
-          tpas={tpas}
-          settings={settings}
-          profile={profile}
-          drivers={drivers}
-          vehicles={vehicles}
-          trips={trips}
-        />
-      </Card>
-    </div>
-  );
-}
-
-function TripsView({ trips, profile, onNotify, upts, tpas, settings, drivers, vehicles, setActiveTab, users = [], tripFilterRange, setTripFilterRange }: any) {
-  const isWeightEnabled = settings?.enableWeight !== false;
-  const showVolume = settings?.showVolume !== false;
-
-  const [showModal, setShowModal] = useState(false);
-  const [isEditing, setIsEditing] = useState<TripRecord | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  
-  // Filter state
-  const [driverFilter, setDriverFilter] = useState("");
-  const [plateFilter, setPlateFilter] = useState("");
-  const [uptFilter, setUptFilter] = useState("");
-  const [dateFilter, setDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
-  const [statusFilter, setStatusFilter] = useState("monthly"); // Default to monthly to save quota
-
-  // Sync global tripFilterRange with local view filters to optimize Firestore reads
-  useEffect(() => {
-    let newStart = tripFilterRange.start;
-    let newEnd = tripFilterRange.end;
-
-    if (statusFilter === 'daily') {
-      newStart = dateFilter;
-      newEnd = dateFilter;
-    } else if (statusFilter === 'monthly') {
-      const date = new Date(selectedMonth + "-01");
-      newStart = format(startOfMonth(date), 'yyyy-MM-dd');
-      newEnd = format(endOfMonth(date), 'yyyy-MM-dd');
-    }
-
-    if (newStart !== tripFilterRange.start || newEnd !== tripFilterRange.end) {
-      setTripFilterRange({ start: newStart, end: newEnd });
-    }
-  }, [statusFilter, dateFilter, selectedMonth]);
-  
-  // Reactively reset UPT filter for user role when Visual Data Ritase is turned OFF
-  useEffect(() => {
-    if (profile?.role === 'user' && !settings?.visualDataRitase) {
-      const userUpt = profile?.assigned_upt_name || profile?.uptName || profile?.upt || "";
-      if (uptFilter !== userUpt) {
-        setUptFilter(userUpt);
-      }
-    }
-  }, [profile, settings?.visualDataRitase, uptFilter]);
-
-  // Pre-calculate ritase numbers efficiently using useMemo
-  const ritaseMap = useMemo(() => {
-    const map = new Map<string, number>();
-    const grouped: { [key: string]: any[] } = {};
-    
-    // Group only valid trips to minimize iterations
-    trips.forEach(t => {
-      const key = `${t.date}_${t.vehiclePlate}_${t.driverName}_${t.upt}`;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(t);
-    });
-
-    // Sort and map indices
-    Object.keys(grouped).forEach(key => {
-      grouped[key].sort((a, b) => (a.operationalTime || "").localeCompare(b.operationalTime || ""));
-      grouped[key].forEach((t, index) => {
-        map.set(t.id, index + 1);
-      });
-    });
-    
-    return map;
-  }, [trips]);
-
-  const filteredTrips = useMemo(() => {
-    return trips.filter((t: any) => {
-      const driverSearch = String(driverFilter || "").toLowerCase();
-      const plateSearch = String(plateFilter || "").toLowerCase();
-      
-      const matchesDriver = !driverFilter || (t.driverName || "").toLowerCase().includes(driverSearch);
-      const matchesPlate = !plateFilter || (t.vehiclePlate || "").toLowerCase().includes(plateSearch);
-      
-      // User role is restricted to their assigned UPT
-      const userUpt = profile?.assigned_upt_name || profile?.uptName || profile?.upt || "";
-      const isUser = profile?.role === 'user';
-      
-      const matchesUpt = isUser 
-        ? (settings?.visualDataRitase ? (!uptFilter || t.upt === uptFilter) : t.upt === userUpt)
-        : (!uptFilter || t.upt === uptFilter);
-      
-      let matchesTime = true;
-      if (statusFilter === 'daily') {
-        matchesTime = t.date === dateFilter;
-      } else if (statusFilter === 'monthly') {
-        matchesTime = t.date?.startsWith(selectedMonth);
-      }
-      
-      return matchesDriver && matchesPlate && matchesUpt && matchesTime;
-    }).sort((a: any, b: any) => {
-      // Sort by date DESC
-      if (a.date !== b.date) return b.date.localeCompare(a.date);
-      // Within same date, sort by operationalTime DESC
-      if (a.operationalTime !== b.operationalTime) return (b.operationalTime || "").localeCompare(a.operationalTime || "");
-      // Fallback to timestamp
-      return (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0);
-    });
-  }, [trips, driverFilter, plateFilter, uptFilter, dateFilter, selectedMonth, statusFilter, settings?.visualDataRitase]);
-
-  // Unique options for searchable filters
-  const driverOptions = useMemo(() => Array.from(new Set(trips.map(t => t.driverName))).sort().filter(Boolean), [trips]);
-  const plateOptions = useMemo(() => Array.from(new Set(trips.map(t => t.vehiclePlate))).sort().filter(Boolean), [trips]);
-
-  const handleTripSubmit = async (data: any) => {
-    console.log("DEBUG: (Data Ritase Tab) Creating Trip as", profile?.role, "with UID", auth.currentUser?.uid);
-    console.log("DEBUG: Current Profile:", JSON.stringify(profile, null, 2));
-    setLoading(true);
-    try {
-      if (isEditing) {
-        const tripRef = doc(db, "trips", isEditing.id);
-        const updateData = {
-          ...data,
-          updatedBy: auth.currentUser?.uid,
-          updated_by_user_name: profile?.operator_name || profile?.name || "",
-          updatedAt: serverTimestamp(),
-          updated_at_timestamp: serverTimestamp()
-        };
-        console.log("DEBUG: Updating Trip Payload:", JSON.stringify(updateData, null, 2));
-        await updateDoc(tripRef, updateData);
-
-        // Log Activity: Update Ritase
-        logActivity(
-          'operasional', 
-          'edit_ritase', 
-          'Data Ritase', 
-          `Perubahan data ritase: ${isEditing.vehiclePlate} (${isEditing.date})`,
-          {
-            recordId: isEditing.id,
-            recordLabel: isEditing.vehiclePlate,
-            beforeData: isEditing,
-            afterData: data,
-            profile
-          }
-        );
-
-        onNotify('success', 'Data ritase berhasil diperbarui');
-      } else {
-        const tripData = {
-          ...data,
-          createdBy: auth.currentUser?.uid,
-          created_by_upt_id: profile?.assigned_upt_id || profile?.uptId || "",
-          created_by_upt_name: profile?.assigned_upt_name || profile?.uptName || "",
-          created_by_user_name: profile?.operator_name || profile?.name || "",
-          created_by_username: profile?.username || "",
-          created_by_account_name: profile?.account_name || profile?.upt || "",
-          timestamp: serverTimestamp(),
-          created_at_timestamp: serverTimestamp(),
-          updated_at_timestamp: serverTimestamp(),
-          is_submission_approved: null,
-          approved_by: "",
-          approved_at: null,
-          submission_note: ""
-        };
-        
-        console.log("DEBUG: Trip Payload Data (Create):", JSON.stringify(tripData, (key, value) => {
-          if (typeof value === 'object' && value !== null && 'type' in value && value.type === 'server_timestamp') return "SERVER_TIMESTAMP";
-          return value;
-        }, 2));
-        
-        const docRef = await addDoc(collection(db, "trips"), tripData);
-
-        // Log Activity: Tambah Ritase (dari menu Data Ritase)
-        logActivity(
-          'operasional', 
-          'tambah_ritase', 
-          'Data Ritase', 
-          `Input data ritase baru: ${data.vehiclePlate} oleh ${data.driverName}`,
-          {
-            recordId: docRef.id,
-            recordLabel: data.vehiclePlate,
-            afterData: data,
-            profile
-          }
-        );
-
-        onNotify('success', 'Data ritase berhasil disimpan');
-      }
-      setShowModal(false);
-      setIsEditing(null);
-    } catch (error) {
-      handleFirestoreError(error, isEditing ? OperationType.UPDATE : OperationType.CREATE, "trips");
-      onNotify('error', 'Gagal menyimpan data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    setLoading(true);
-    try {
-      const tripToDelete = trips.find((t: any) => t.id === id);
-      await deleteDoc(doc(db, "trips", id));
-
-      // Log Activity: Hapus Ritase
-      logActivity(
-        'operasional', 
-        'hapus_ritase', 
-        'Data Ritase', 
-        `Penghapusan data ritase: ${tripToDelete?.vehiclePlate || id}`,
-        {
-          recordId: id,
-          recordLabel: tripToDelete?.vehiclePlate || id,
-          beforeData: tripToDelete,
-          profile
-        }
-      );
-
-      onNotify('success', 'Data ritase berhasil dihapus');
-      setConfirmDelete(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `trips/${id}`);
-      onNotify('error', 'Gagal menghapus data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold text-white tracking-tight">Data Ritase</h2>
-            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-500 uppercase tracking-wider">{trips.length} Records Terbaru</span>
-          </div>
-          <p className="text-slate-500 text-sm">Menampilkan porsi data untuk performa maksimal. Gunakan Pusat Ekspor untuk seluruh data historis.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          {profile?.role === 'admin' && (
-            <Button 
-              variant="secondary" 
-              onClick={async () => {
-                let suffix = "Semua";
-                if (statusFilter === 'daily') suffix = dateFilter;
-                else if (statusFilter === 'monthly') suffix = selectedMonth;
-                const fileName = `Data_Ritase_${suffix}`;
-                await exportTripsToExcel(filteredTrips, fileName, users);
-                onNotify('success', 'Data diunduh ke Excel. Data di app tetap tersimpan.');
-              }}
-              disabled={filteredTrips.length === 0}
-              className="text-xs py-3"
-            >
-              <Download className="w-4 h-4" /> Ekspor Tampilan (Excel)
-            </Button>
-          )}
-          <Button onClick={() => setActiveTab("input-ritase")}>
-            <Plus className="w-5 h-5" /> Input Ritase Baru
-          </Button>
-        </div>
-      </div>
-
-      <Card className="p-4 md:p-6 bg-slate-900 border-slate-800">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Tampilan</span>
-            <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1">
-              <button 
-                onClick={() => setStatusFilter('monthly')}
-                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase transition-all ${statusFilter === 'monthly' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:bg-slate-900'}`}
-              >
-                Bulan
-              </button>
-              <button 
-                onClick={() => setStatusFilter('daily')}
-                className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase transition-all ${statusFilter === 'daily' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:bg-slate-900'}`}
-              >
-                Hari
-              </button>
-            </div>
-          </div>
-          {statusFilter === 'daily' && (
-            <Input 
-              label="Pilih Tanggal"
-              type="date"
-              value={dateFilter}
-              onChange={(e: any) => setDateFilter(e.target.value)}
-            />
-          )}
-          {statusFilter === 'monthly' && (
-            <Input 
-              label="Pilih Bulan"
-              type="month"
-              value={selectedMonth}
-              onChange={(e: any) => setSelectedMonth(e.target.value)}
-            />
-          )}
-                <Select 
-                  label="Filter UPT"
-                  options={[
-                    { label: "Semua UPT", value: "" },
-                    ...upts.map((u: any) => ({ label: u.name, value: u.name }))
-                  ]} 
-                  value={(profile?.role === 'user' && !settings?.visualDataRitase) ? (profile?.assigned_upt_name || profile?.uptName || profile?.upt || "") : uptFilter}
-                  onChange={(e: any) => setUptFilter(e.target.value)}
-                  placeholder="Filter UPT..."
-                  disabled={profile?.role === 'user' && !settings?.visualDataRitase}
-                />
-          <Select 
-            label="Filter Sopir"
-            placeholder="Filter Sopir..." 
-            value={driverFilter}
-            onChange={(e: any) => setDriverFilter(e.target.value)}
-            options={[{ label: "Semua Sopir", value: "" }, ...driverOptions]}
-          />
-          <Select 
-            label="Filter Plat"
-            placeholder="Filter Plat Nomor..." 
-            value={plateFilter}
-            onChange={(e: any) => setPlateFilter(e.target.value)}
-            options={[{ label: "Semua Plat", value: "" }, ...plateOptions]}
-          />
-        </div>
-
-        <div className="overflow-x-auto -mx-4 md:-mx-6 custom-scrollbar-horizontal pb-2">
-          <table className="w-full text-left border-collapse min-w-[1000px]">
-            <thead className="bg-slate-950/50 border-y border-slate-800">
-              <tr>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Waktu Ops / Input</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">UPT</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">TPA</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Sopir / Plat</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Jenis</th>
-                {(isWeightEnabled && (profile?.role === 'admin' || profile?.role === 'co-admin')) && <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tonase (Kg)</th>}
-                {showVolume && <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Volume (m³)</th>}
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Ritase Ke</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Input Oleh</th>
-                {(profile?.role === 'admin' || profile?.role === 'co-admin') && (
-                  <th className="px-6 py-4 text-right text-[10px] font-bold text-slate-500 uppercase tracking-widest">Aksi</th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {filteredTrips.length === 0 ? (
-                <tr>
-                  <td colSpan={12} className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="w-16 h-16 bg-slate-800/50 rounded-full flex items-center justify-center">
-                        <ClipboardList className="w-8 h-8 text-slate-600" />
-                      </div>
-                      <h3 className="text-white font-bold">Data Tidak Ditemukan</h3>
-                      <p className="text-slate-500 text-sm max-w-xs mx-auto">
-                        Tidak ada data untuk filter {statusFilter === 'daily' ? 'Hari' : 'Bulan'} ini.
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredTrips.map((trip) => (
-                <tr key={trip.id} className="hover:bg-slate-800/30 transition-colors group">
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-slate-300">
-                          {format(new Date(trip.date.replace(/-/g, '/')), 'dd MMM yyyy')}
-                        </span>
-                        <span className="text-xs font-mono text-emerald-500">{trip.operationalTime || "-"}</span>
-                      </div>
-                      {trip.timestamp && (
-                        <span className="text-[9px] text-slate-600 font-bold uppercase mt-1 opacity-70">
-                          Entry: {format(trip.timestamp.toDate(), 'dd/MM/yy HH:mm')}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <Badge variant="user">{trip.upt}</Badge>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{trip.tpa}</span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <p className="text-sm font-bold text-white mb-0.5">{trip.driverName}</p>
-                    <p className="text-[10px] text-emerald-500 font-mono font-bold tracking-tight">{trip.vehiclePlate}</p>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                      {trip.vehicleType || "-"}
-                    </span>
-                  </td>
-                  {(isWeightEnabled && (profile?.role === 'admin' || profile?.role === 'co-admin')) && (
-                    <td className="px-6 py-4 text-sm text-slate-200 font-bold whitespace-nowrap">
-                      {trip.tonnage || 0} Kg
-                    </td>
-                  )}
-                  {showVolume && <td className="px-6 py-4 text-sm text-slate-400 font-mono whitespace-nowrap">{trip.volume || 0}</td>}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                     <span className="text-sm font-bold text-white bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 whitespace-nowrap">Rit ke-{ritaseMap.get(trip.id) || 1}</span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex flex-col gap-0.5">
-                      {trip.created_by_user_name ? (
-                        <>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-                            <span className="text-[10px] font-bold text-white uppercase tracking-tight">
-                              {trip.created_by_user_name}
-                            </span>
-                          </div>
-                          <p className="text-[9px] text-slate-500 font-bold ml-3 uppercase tracking-tighter">
-                            {trip.created_by_upt_name || (profile?.role === 'admin' ? "ADMIN DLH" : "SISTEM")}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-slate-600"></div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{trip.upt || "Sistem"}</span>
-                          </div>
-                          <p className="text-[9px] text-slate-600 font-medium ml-3">Legacy/Auto Record</p>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                  {(profile?.role === 'admin' || profile?.role === 'co-admin') && (
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-3 md:opacity-0 md:group-hover:opacity-100 transition-all">
-                        <button onClick={() => { setIsEditing(trip); setShowModal(true); }} className="text-slate-500 hover:text-emerald-500 text-xs font-bold underline transition-colors">
-                          Edit
-                        </button>
-                        <button onClick={() => setConfirmDelete(trip.id)} className="text-slate-500 hover:text-rose-500 text-xs font-bold underline transition-colors">
-                          Hapus
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {filteredTrips.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-24 text-center">
-                    <div className="flex flex-col items-center gap-3 opacity-20">
-                      <ClipboardList size={64} className="text-slate-400" />
-                      <p className="text-sm font-bold tracking-widest uppercase text-slate-500">Database Kosong</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <motion.div 
-            initial={{ scale: 0.95, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            className="bg-slate-900 rounded-2xl w-full max-w-lg p-8 shadow-2xl border border-slate-800"
-          >
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-bold text-white tracking-tight">{isEditing ? "Edit Data Ritase" : "Input Ritase Baru"}</h3>
-              <button onClick={() => setShowModal(false)} className="text-slate-500 hover:text-white transition-colors">
-                <LogOut className="w-6 h-6 rotate-180" />
-              </button>
-            </div>
-            <TripForm 
-              onNotify={onNotify}
-              initialData={isEditing} 
-              onSubmit={handleTripSubmit} 
-              onCancel={() => setShowModal(false)}
-              loading={loading}
-              upts={upts}
-              tpas={tpas}
-              settings={settings}
-              profile={profile}
-              drivers={drivers}
-              vehicles={vehicles}
-              trips={trips}
-            />
-          </motion.div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <motion.div 
-            initial={{ scale: 0.95, opacity: 0 }} 
-            animate={{ scale: 1, opacity: 1 }} 
-            className="bg-slate-900 rounded-2xl w-full max-w-sm p-8 border border-slate-800 shadow-2xl"
-          >
-            <div className="flex flex-col items-center text-center gap-4">
-              <div className="p-4 bg-rose-500/10 rounded-full text-rose-500 mb-2">
-                <Trash2 className="w-8 h-8" />
-              </div>
-              <h3 className="text-xl font-bold text-white">Hapus Data Ritase?</h3>
-              <p className="text-slate-400 text-sm leading-relaxed">
-                Tindakan ini tidak dapat dibatalkan. Seluruh informasi ritase ini akan dihapus permanen dari database.
-              </p>
-              <div className="flex flex-col w-full gap-3 mt-6">
-                <Button 
-                  variant="primary" 
-                  className="w-full bg-rose-600 hover:bg-rose-500 text-white" 
-                  onClick={() => handleDelete(confirmDelete)}
-                  disabled={loading}
-                >
-                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Ya, Hapus Data"}
-                </Button>
-                <Button 
-                  variant="secondary" 
-                  className="w-full" 
-                  onClick={() => setConfirmDelete(null)}
-                  disabled={loading}
-                >
-                  Batal
-                </Button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function UsersView({ users, profile, onNotify, upts, onResetPasswordSuccess }: any) {
-  const [showModal, setShowModal] = useState(false);
-  const [isEditing, setIsEditing] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-
-  const handleResetPassword = async (u: UserProfile) => {
-    // Generate an 8-character temporary password
-    const tempPassword = Math.random().toString(36).slice(-8).toUpperCase();
-    
-    setLoading(true);
-    try {
-      // 1. Mark in Firestore that this user MUST change password
-      const userRef = doc(db, "users", u.userId);
-      await updateDoc(userRef, {
-        force_password_change: true
-      });
-
-      // Log: Admin reset password
-      logActivity(
-        'perubahan_data', 
-        'reset_password_user', 
-        'Manajemen User', 
-        `Admin mereset password user: ${u.username}`,
-        {
-          recordId: u.userId,
-          recordLabel: u.username,
-          profile
-        }
-      );
-
-      // Trigger the success modal in App component
-      if (onResetPasswordSuccess) {
-        onResetPasswordSuccess({ tempPassword, username: u.username });
-      }
-      
-      onNotify('success', `Password ${u.username} berhasil di-reset`);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${u.userId}`);
-      onNotify('error', 'Gagal mereset password');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setLoading(true);
-    const formData = new FormData(e.currentTarget);
-    const selectedUptId = formData.get("assigned_upt_id") as string;
-    const selectedUpt = upts.find((u: any) => u.id === selectedUptId);
-
-    const data: any = {
-      account_name: formData.get("account_name") as string,
-      operator_name: formData.get("operator_name") as string,
-      role: formData.get("role") as UserRole,
-      assigned_upt_id: selectedUptId || "",
-      assigned_upt_name: selectedUpt?.nama_upt || selectedUpt?.name || "",
-      status: formData.get("status") as string,
-      username: isEditing?.username || "",
-      // Legacy compatibility (optional but safe)
-      name: formData.get("account_name") as string,
-      upt: formData.get("account_name") as string,
-      uptName: selectedUpt?.nama_upt || selectedUpt?.name || "",
-      uptId: selectedUptId || "",
-    };
-
-    try {
-      if (isEditing) {
-        const finalData = {
-          ...data,
-          email: isEditing.email,
-          userId: isEditing.userId,
-          updatedAt: serverTimestamp()
-        };
-        const userRef = doc(db, "users", isEditing.userId);
-        await updateDoc(userRef, finalData);
-
-        // Log Activity: User Update
-        logActivity(
-          'perubahan_data', 
-          'edit_user', 
-          'Manajemen User', 
-          `Pembaruan profil/akses user: ${isEditing.username}`,
-          {
-            recordId: isEditing.userId,
-            recordLabel: isEditing.username,
-            beforeData: isEditing,
-            afterData: finalData,
-            profile
-          }
-        );
-
-        onNotify('success', 'User berhasil diperbarui');
-      }
-      setShowModal(false);
-      setIsEditing(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${isEditing?.userId}`);
-      onNotify('error', 'Gagal memperbarui user');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (userId: string) => {
-    if (auth.currentUser?.uid === userId) {
-      onNotify('error', 'Anda tidak dapat menghapus akun Anda sendiri');
-      return;
-    }
-    
-    try {
-      const userToDelete = users.find((u: any) => u.userId === userId);
-      await deleteDoc(doc(db, "users", userId));
-
-      // Log Activity: User Delete
-      logActivity(
-        'perubahan_data', 
-        'hapus_user', 
-        'Manajemen User', 
-        `Penghapusan akun user: ${userToDelete?.username || userId}`,
-        {
-          recordId: userId,
-          recordLabel: userToDelete?.username || userId,
-          beforeData: userToDelete,
-          profile
-        }
-      );
-
-      onNotify('success', 'Profil user berhasil dihapus');
-      setConfirmDelete(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `users/${userId}`);
-      onNotify('error', 'Gagal menghapus user');
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-white tracking-tight">Manajemen User</h2>
-          <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">{users.length} Data</span>
-        </div>
-        <p className="text-slate-500 text-sm">Kelola akses dan peran personil UPT.</p>
-      </div>
-
-      <Card className="overflow-hidden bg-slate-900 border-slate-800 relative">
-        <div className="overflow-x-auto custom-scrollbar-horizontal pb-2">
-          <table className="w-full text-left border-collapse min-w-[800px]">
-          <thead className="bg-slate-950/50 border-b border-slate-800">
-            <tr>
-              <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Username</th>
-              <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Peran</th>
-              <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">UPT Tugas</th>
-              <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Nama Akun</th>
-              <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Operator</th>
-              <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
-              <th className="px-6 py-4 text-right text-[10px] font-bold text-slate-500 uppercase tracking-widest">Aksi</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {users.map((u: any) => (
-              <tr key={u.userId} className="hover:bg-slate-800/30 transition-colors group">
-                <td className="px-6 py-4">
-                  <span className="text-xs font-mono text-blue-400 bg-blue-400/10 px-2 py-1 rounded border border-blue-400/20">{u.username || "-"}</span>
-                </td>
-                <td className="px-6 py-4">
-                  <Badge variant={u.role}>{u.role}</Badge>
-                </td>
-                <td className="px-6 py-4">
-                   <p className="text-sm font-medium text-slate-300 whitespace-nowrap">{u.assigned_upt_name || u.uptName || "Admin Pusat"}</p>
-                </td>
-                <td className="px-6 py-4">
-                   <p className="text-xs font-bold text-emerald-500 uppercase whitespace-nowrap">{u.account_name || u.upt || "-"}</p>
-                </td>
-                <td className="px-6 py-4">
-                  <p className="font-bold text-white text-sm whitespace-nowrap">{u.operator_name || u.name || "-"}</p>
-                </td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${u.status === 'inactive' ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
-                    {u.status || 'active'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex items-center justify-end gap-4">
-                    {confirmDelete === u.userId ? (
-                      <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
-                        <span className="text-[10px] font-bold text-rose-500 uppercase tracking-tight">Hapus?</span>
-                        <button onClick={() => handleDelete(u.userId)} className="text-rose-500 hover:text-rose-400 text-xs font-bold underline">Ya</button>
-                        <button onClick={() => setConfirmDelete(null)} className="text-slate-500 hover:text-slate-300 text-xs font-bold underline">Batal</button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-end gap-4 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setIsEditing(u); setShowModal(true); }} className="text-slate-500 hover:text-blue-400 text-xs font-bold underline transition-colors">
-                          Edit Akses
-                        </button>
-                        {profile?.role === 'admin' && (
-                          <button 
-                            onClick={() => {
-                              if (window.confirm(`Reset password untuk ${u.username}? User akan dipaksa ganti password pada login berikutnya.`)) {
-                                handleResetPassword(u);
-                              }
-                            }} 
-                            className="text-slate-500 hover:text-amber-500 text-xs font-bold underline transition-colors"
-                          >
-                            Reset Password
-                          </button>
-                        )}
-                        {profile?.role === 'admin' && (
-                          <button onClick={() => setConfirmDelete(u.userId)} className="text-slate-500 hover:text-rose-500 text-xs font-bold underline transition-colors">
-                            Hapus User
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-
-      {/* User Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <motion.div 
-            initial={{ scale: 0.95, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            className="bg-slate-900 rounded-2xl w-full max-w-md p-8 shadow-2xl border border-slate-800"
-          >
-            <h3 className="text-xl font-bold text-white tracking-tight mb-6">Kelola Akun Personil</h3>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input 
-                  label="Akun Username" 
-                  name="username" 
-                  required 
-                  defaultValue={isEditing?.username} 
-                  placeholder="Contoh: kdmndlh" 
-                  disabled
-                  className="bg-slate-800/50 opacity-60 cursor-not-allowed" 
-                />
-                <Select 
-                  label="Status Akun" 
-                  name="status" 
-                  required 
-                  defaultValue={isEditing?.status || 'active'}
-                  options={[
-                    { value: 'active', label: 'Aktif' },
-                    { value: 'inactive', label: 'Non-Aktif' }
-                  ]}
-                  disabled={profile?.role === 'co-admin'}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input 
-                  label="Nama Akun / Entitas" 
-                  name="account_name" 
-                  required 
-                  defaultValue={isEditing?.account_name || isEditing?.upt} 
-                  placeholder="Contoh: UPT Kedaton" 
-                  disabled={profile?.role === 'co-admin'}
-                />
-                <Input label="Nama Operator" name="operator_name" defaultValue={isEditing?.operator_name || isEditing?.name} placeholder="Contoh: Desi" />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Select 
-                  label="Peran / Akses" 
-                  name="role" 
-                  required 
-                  defaultValue={isEditing?.role}
-                  options={[
-                    { value: 'admin', label: 'Admin (Pusat)' },
-                    { value: 'co-admin', label: 'Co-Admin (Validasi)' },
-                    { value: 'user', label: 'User (Input Saja)' }
-                  ]} 
-                  disabled={profile?.role === 'co-admin'}
-                />
-                <Select 
-                  label="Penugasan UPT" 
-                  name="assigned_upt_id" 
-                  defaultValue={isEditing?.assigned_upt_id || isEditing?.uptId}
-                  options={[
-                    { label: "Admin Pusat (Tanpa Wilayah)", value: "" },
-                    ...upts.map((u: any) => ({ label: u.nama_upt || u.name, value: u.id }))
-                  ]} 
-                  disabled={profile?.role === 'co-admin'}
-                />
-              </div>
-
-              <div className="flex gap-4 pt-6 border-t border-slate-800">
-                <Button variant="secondary" className="flex-1" onClick={() => setShowModal(false)}>Batal</Button>
-                <Button type="submit" disabled={loading} className="flex-1">
-                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Simpan Perubahan"}
-                </Button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile, tripFilterRange, setTripFilterRange, reportsCache, setReportsCache }: any) {
+function ReportsView_Deprecated({ trips, onNotify, settings, upts = [], users = [], profile, tripFilterRange, setTripFilterRange, reportsCache, setReportsCache }: any) {
   const isWeightEnabled = settings?.enableWeight !== false;
   const showVolume = settings?.showVolume !== false;
 
@@ -4772,7 +2482,7 @@ function ReportsView({ trips, onNotify, settings, upts = [], users = [], profile
   );
 }
 
-function VehiclesView({ vehicles, onNotify, upts, profile, drivers, trips, settings }: any) {
+function VehiclesView_Deprecated({ vehicles, onNotify, upts, profile, drivers, trips, settings }: any) {
   const isAdmin = profile?.role === 'admin' || profile?.role === 'co-admin';
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState<Vehicle | null>(null);
@@ -5647,7 +3357,7 @@ function VehiclesView({ vehicles, onNotify, upts, profile, drivers, trips, setti
   );
 }
 
-function DriversView({ drivers, onNotify, upts, profile, vehicles, settings }: any) {
+function DriversView_Deprecated({ drivers, onNotify, upts, profile, vehicles, settings }: any) {
   const isAdmin = profile?.role === 'admin' || profile?.role === 'co-admin';
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState<Driver | null>(null);
@@ -5952,7 +3662,7 @@ function DriversView({ drivers, onNotify, upts, profile, vehicles, settings }: a
   );
 }
 
-function UptsView({ upts, vehicles, drivers, onNotify, profile, onEditVehicle, onEditDriver }: any) {
+function UptsView_Deprecated({ upts, vehicles, drivers, onNotify, profile, onEditVehicle, onEditDriver }: any) {
   const isAdmin = profile?.role === 'admin' || profile?.role === 'co-admin';
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState<any | null>(null);
@@ -6528,388 +4238,7 @@ function UptsView({ upts, vehicles, drivers, onNotify, profile, onEditVehicle, o
   );
 }
 
-function GlobalSettingsView({ onNotify, settings, tpas, profile }: any) {
-  const [updatingSettings, setUpdatingSettings] = useState(false);
-  const [draftSettings, setDraftSettings] = useState<any>(null);
-
-  // Initialize draft settings from saved settings
-  useEffect(() => {
-    if (settings && !draftSettings) {
-      setDraftSettings({
-        mainTpaId: settings.mainTpaId || "",
-        isTpaLocked: settings.isTpaLocked || false,
-        enableWeight: settings.enableWeight !== false,
-        showWeightInForm: settings.showWeightInForm !== false,
-        showVolume: settings.showVolume !== false,
-        visualDataRitase: settings.visualDataRitase || false,
-        visual_kendaraan_tidak_terhubung_upt: settings.visual_kendaraan_tidak_terhubung_upt || false,
-        visual_kendaraan_multi_upt: settings.visual_kendaraan_multi_upt || false,
-        visual_card_tonase_kendaraan: settings.visual_card_tonase_kendaraan || false,
-        visual_supir_tidak_terhubung_upt: settings.visual_supir_tidak_terhubung_upt || false,
-        visual_supir_multi_upt: settings.visual_supir_multi_upt || false,
-      });
-    }
-  }, [settings]);
-
-  const hasChanges = useMemo(() => {
-    if (!settings || !draftSettings) return false;
-    return (
-      draftSettings.mainTpaId !== (settings.mainTpaId || "") ||
-      draftSettings.isTpaLocked !== (settings.isTpaLocked || false) ||
-      draftSettings.enableWeight !== (settings.enableWeight !== false) ||
-      draftSettings.showWeightInForm !== (settings.showWeightInForm !== false) ||
-      draftSettings.showVolume !== (settings.showVolume !== false) ||
-      draftSettings.visualDataRitase !== (settings.visualDataRitase || false) ||
-      draftSettings.visual_kendaraan_tidak_terhubung_upt !== (settings.visual_kendaraan_tidak_terhubung_upt || false) ||
-      draftSettings.visual_kendaraan_multi_upt !== (settings.visual_kendaraan_multi_upt || false) ||
-      draftSettings.visual_card_tonase_kendaraan !== (settings.visual_card_tonase_kendaraan || false) ||
-      draftSettings.visual_supir_tidak_terhubung_upt !== (settings.visual_supir_tidak_terhubung_upt || false) ||
-      draftSettings.visual_supir_multi_upt !== (settings.visual_supir_multi_upt || false)
-    );
-  }, [settings, draftSettings]);
-
-  const handleUpdateSettings = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!hasChanges) return;
-
-    setUpdatingSettings(true);
-    const data = { ...draftSettings };
-
-    try {
-      await setDoc(doc(db, "settings", "global"), data);
-
-      // Log Activity: Global Settings Update
-      const changedKeys = Object.keys(data).filter(key => data[key] !== settings[key]);
-      logActivity(
-        'sistem', 
-        'update_settings', 
-        'Pengaturan Sistem', 
-        `Pembaruan ${changedKeys.length} konfigurasi sistem: ${changedKeys.join(', ')}`,
-        {
-          beforeData: settings,
-          afterData: data,
-          profile
-        }
-      );
-
-      onNotify('success', 'Pengaturan global berhasil diperbarui');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, "settings/global");
-      onNotify('error', 'Gagal memperbarui pengaturan');
-    } finally {
-      setUpdatingSettings(false);
-    }
-  };
-
-  const handleReset = () => {
-    if (settings) {
-      setDraftSettings({
-        mainTpaId: settings.mainTpaId || "",
-        isTpaLocked: settings.isTpaLocked || false,
-        enableWeight: settings.enableWeight !== false,
-        showWeightInForm: settings.showWeightInForm !== false,
-        showVolume: settings.showVolume !== false,
-        visualDataRitase: settings.visualDataRitase || false,
-        visual_kendaraan_tidak_terhubung_upt: settings.visual_kendaraan_tidak_terhubung_upt || false,
-        visual_kendaraan_multi_upt: settings.visual_kendaraan_multi_upt || false,
-        visual_card_tonase_kendaraan: settings.visual_card_tonase_kendaraan || false,
-        visual_supir_tidak_terhubung_upt: settings.visual_supir_tidak_terhubung_upt || false,
-        visual_supir_multi_upt: settings.visual_supir_multi_upt || false,
-      });
-    }
-  };
-
-  if (!draftSettings) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-8 max-w-5xl">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Pusat Pengaturan Sistem</h2>
-          <p className="text-slate-500 text-sm">Konfigurasi operasional, visibilitas data, dan kontrol kualitas database.</p>
-        </div>
-        
-        {hasChanges && (
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="px-4 py-2 bg-orange-500/10 border border-orange-500/50 rounded-xl flex items-center gap-2"
-          >
-            <AlertCircle className="w-4 h-4 text-orange-500" />
-            <span className="text-xs font-bold text-orange-500 uppercase tracking-wider">Perubahan belum disimpan</span>
-          </motion.div>
-        )}
-      </div>
-
-      <form onSubmit={handleUpdateSettings} className="flex flex-col gap-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* GROUP: RITASE & OPERASIONAL */}
-          <Card className="p-6 sm:p-8 bg-slate-900 border-slate-800 shadow-2xl flex flex-col gap-6">
-            <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
-              <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500">
-                <Truck className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-widest">Ritase & Operasional</h3>
-            </div>
-
-            <Select 
-              label="TPA Utama" 
-              name="mainTpaId" 
-              required 
-              value={draftSettings.mainTpaId}
-              onChange={(e) => setDraftSettings({ ...draftSettings, mainTpaId: e.target.value })}
-              options={tpas.map((t: any) => ({ value: t.id, label: t.name }))}
-            />
-            
-            <div className="flex flex-col gap-3">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Kunci Pilihan TPA</label>
-              <div className="grid grid-cols-2 gap-4">
-                <button 
-                  type="button"
-                  onClick={() => setDraftSettings({ ...draftSettings, isTpaLocked: true })}
-                  className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border cursor-pointer transition-all ${draftSettings.isTpaLocked ? 'bg-rose-500/10 border-rose-500/50 text-rose-500 shadow-lg shadow-rose-900/10' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700'}`}
-                >
-                  <Lock className="w-4 h-4" />
-                  <span className="text-xs font-bold uppercase tracking-wider">Dikunci</span>
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setDraftSettings({ ...draftSettings, isTpaLocked: false })}
-                  className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border cursor-pointer transition-all ${!draftSettings.isTpaLocked ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500 shadow-lg shadow-emerald-900/10' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700'}`}
-                >
-                  <Unlock className="w-4 h-4" />
-                  <span className="text-xs font-bold uppercase tracking-wider">Terbuka</span>
-                </button>
-              </div>
-              <p className="text-[10px] text-slate-600 italic">
-                * Kunci Pilihan TPA berlaku untuk seluruh level akses (Admin & User).
-              </p>
-            </div>
-
-            <div className="space-y-4 pt-4 border-t border-slate-800">
-               <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-bold text-slate-200">Fitur Tonase (Berat)</span>
-                    <span className="text-[10px] text-slate-500 italic">Aktifkan modul perhitungan berat sampah.</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      type="button"
-                      onClick={() => setDraftSettings({ ...draftSettings, enableWeight: true })}
-                      className={`px-3 py-1 rounded font-bold text-[10px] uppercase transition-all ${draftSettings.enableWeight ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'bg-slate-800 text-slate-500'}`}
-                    >
-                      ON
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => setDraftSettings({ ...draftSettings, enableWeight: false })}
-                      className={`px-3 py-1 rounded font-bold text-[10px] uppercase transition-all ${!draftSettings.enableWeight ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/20' : 'bg-slate-800 text-slate-500'}`}
-                    >
-                      OFF
-                    </button>
-                  </div>
-                </div>
-            </div>
-          </Card>
-
-          {/* GROUP: VISUAL & TAMPILAN DATA */}
-          <Card className="p-6 sm:p-8 bg-slate-900 border-slate-800 shadow-2xl flex flex-col gap-6">
-            <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
-              <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
-                <Eye className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-widest">Visual & Tampilan Data</h3>
-            </div>
-
-            <div className="space-y-4">
-              <div className={`flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800 transition-opacity ${!draftSettings.enableWeight ? 'opacity-50 pointer-events-none' : ''}`}>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-bold text-slate-200">Tonase di Form Input</span>
-                  <span className="text-[10px] text-slate-500 italic">Munculkan kolom input berat pada form ritase.</span>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    type="button"
-                    onClick={() => setDraftSettings({ ...draftSettings, showWeightInForm: true })}
-                    className={`px-3 py-1 rounded font-bold text-[10px] uppercase transition-all ${draftSettings.showWeightInForm ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-                  >
-                    TAMPIL
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => setDraftSettings({ ...draftSettings, showWeightInForm: false })}
-                    className={`px-3 py-1 rounded font-bold text-[10px] uppercase transition-all ${!draftSettings.showWeightInForm ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-                  >
-                    OFF
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-bold text-slate-200">Kolom Volume (m³)</span>
-                  <span className="text-[10px] text-slate-500 italic">Tampilkan input volume sampah.</span>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    type="button"
-                    onClick={() => setDraftSettings({ ...draftSettings, showVolume: true })}
-                    className={`px-3 py-1 rounded font-bold text-[10px] uppercase transition-all ${draftSettings.showVolume ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-                  >
-                    ON
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => setDraftSettings({ ...draftSettings, showVolume: false })}
-                    className={`px-3 py-1 rounded font-bold text-[10px] uppercase transition-all ${!draftSettings.showVolume ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-                  >
-                    OFF
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-bold text-slate-200">Visual Data Ritase</span>
-                    <span className="text-[10px] text-slate-500 italic">Cakupan visibilitas data untuk Role User.</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      type="button"
-                      onClick={() => setDraftSettings({ ...draftSettings, visualDataRitase: true })}
-                      className={`px-3 py-1 rounded font-bold text-[10px] uppercase transition-all ${draftSettings.visualDataRitase ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-                    >
-                      AKTIF
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => setDraftSettings({ ...draftSettings, visualDataRitase: false })}
-                      className={`px-3 py-1 rounded font-bold text-[10px] uppercase transition-all ${!draftSettings.visualDataRitase ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-                    >
-                      OFF
-                    </button>
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-500 leading-relaxed italic pr-4">
-                  * {draftSettings.visualDataRitase ? "User dapat melihat seluruh UPT." : "User hanya melihat UPT-nya sendiri."}
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          {/* GROUP: DATABASE QUALITY CONTROL */}
-          <Card className="p-6 sm:p-8 bg-slate-900 border-slate-800 shadow-2xl flex flex-col gap-6 lg:col-span-2">
-            <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
-              <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-widest">Database Quality Control</h3>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[
-                { key: 'visual_kendaraan_tidak_terhubung_upt', label: 'Visual Kendaraan Tanpa UPT', desc_on: 'Menampilkan kendaraan yang belum memiliki relasi UPT.', desc_off: 'Daftar kendaraan tanpa UPT tidak ditampilkan.' },
-                { key: 'visual_kendaraan_multi_upt', label: 'Visual Kendaraan Multi UPT', desc_on: 'Menampilkan kendaraan yang terhubung ke >1 UPT.', desc_off: 'Daftar kendaraan multi-UPT tidak ditampilkan.' },
-                { key: 'visual_card_tonase_kendaraan', label: 'Visual Card Tonase Kendaraan', desc_on: 'Menampilkan list tonase kendaraan dalam bentuk card.', desc_off: 'List tonase card tidak ditampilkan.' },
-                { key: 'visual_supir_tidak_terhubung_upt', label: 'Visual Personil Tanpa UPT', desc_on: 'Menampilkan personil yang belum memiliki relasi UPT.', desc_off: 'Daftar personil tanpa UPT tidak ditampilkan.' },
-                { key: 'visual_supir_multi_upt', label: 'Visual Personil Multi UPT', desc_on: 'Menampilkan personil yang terhubung ke >1 UPT.', desc_off: 'Daftar personil multi-UPT tidak ditampilkan.' },
-              ].map((item) => (
-                <div key={item.key} className="p-4 bg-slate-950/50 rounded-xl border border-slate-800 flex flex-col justify-between gap-3">
-                  <div className="space-y-1">
-                    <h4 className="text-xs font-bold text-slate-200">{item.label}</h4>
-                    <p className="text-[10px] text-slate-500 leading-tight">
-                      {draftSettings[item.key] ? item.desc_on : item.desc_off}
-                    </p>
-                  </div>
-                  <div className="flex gap-2 pt-2 border-t border-slate-800/50">
-                    <button 
-                      type="button"
-                      onClick={() => setDraftSettings({ ...draftSettings, [item.key]: true })}
-                      className={`flex-1 py-1.5 rounded font-bold text-[10px] uppercase transition-all ${draftSettings[item.key] ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-                    >
-                      ON
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => setDraftSettings({ ...draftSettings, [item.key]: false })}
-                      className={`flex-1 py-1.5 rounded font-bold text-[10px] uppercase transition-all ${!draftSettings[item.key] ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-500'}`}
-                    >
-                      OFF
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* GROUP: SISTEM & KEAMANAN */}
-          <Card className="p-6 sm:p-8 bg-slate-900 border-slate-800 shadow-2xl flex flex-col gap-6 lg:col-span-2">
-            <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
-              <div className="p-2 bg-rose-500/10 rounded-lg text-rose-500">
-                <Lock className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-widest">Sistem & Keamanan</h3>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="flex flex-col gap-4">
-                <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
-                  <h4 className="text-sm font-bold text-emerald-500 mb-2">Audit Log</h4>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
-                    Setiap perubahan pada pengaturan ini akan dicatat ke dalam Log Aktivitas secara permanen untuk kebutuhan audit sistem.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-col gap-3">
-                 <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
-                    <div>
-                      <h4 className="text-sm font-bold text-white">Mode Pemeliharaan</h4>
-                      <p className="text-[10px] text-slate-500 italic">Coming soon</p>
-                    </div>
-                    <div className="opacity-30 pointer-events-none">
-                      <div className="w-10 h-5 bg-slate-800 rounded-full relative">
-                        <div className="absolute left-1 top-1 w-3 h-3 bg-slate-600 rounded-full" />
-                      </div>
-                    </div>
-                 </div>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-center gap-4 mt-4">
-          <Button 
-            type="submit" 
-            disabled={updatingSettings || !hasChanges} 
-            className={`flex-1 sm:flex-none sm:min-w-[240px] py-4 transition-all duration-300 ${hasChanges ? 'shadow-lg shadow-emerald-900/40 scale-[1.02]' : 'opacity-50'}`}
-          >
-            {updatingSettings ? <Loader2 className="w-5 h-5 animate-spin" /> : "Simpan Semua Perubahan"}
-          </Button>
-          
-          {hasChanges && (
-            <button
-              type="button"
-              onClick={handleReset}
-              className="flex items-center gap-2 px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest hover:text-white transition-colors group"
-            >
-              <RotateCcw className="w-4 h-4 group-hover:rotate-[-45deg] transition-transform" />
-              Reset Perubahan
-            </button>
-          )}
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function TpaTpsView({ tpas, tps, onNotify, settings, profile }: any) {
+function TpaTpsView_Deprecated({ tpas, tps, onNotify, settings, profile }: any) {
   const isAdmin = profile?.role === 'admin' || profile?.role === 'co-admin';
   const [activeSubTab, setActiveSubTab] = useState<'tpa' | 'tps'>('tpa');
   const [showModal, setShowModal] = useState(false);

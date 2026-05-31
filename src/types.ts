@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'co-admin' | 'user';
+export type UserRole = 'admin' | 'co-admin' | 'user' | 'viewer' | 'operator_bakung';
 
 export interface UserProfile {
   userId: string;
@@ -8,7 +8,7 @@ export interface UserProfile {
   assigned_upt_name?: string;
   account_name: string;
   operator_name: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'pending' | 'rejected';
   email: string;
   force_password_change?: boolean;
   // Legacy fields for compatibility during transition

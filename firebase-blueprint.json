@@ -8,12 +8,12 @@
         "userId": { "type": "string" },
         "username": { "type": "string", "description": "Immutable account username" },
         "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["admin", "co-admin", "user"] },
+        "role": { "type": "string", "enum": ["admin", "co-admin", "user", "viewer", "operator_bakung"] },
         "assigned_upt_id": { "type": "string", "description": "Assigned UPT Document ID" },
         "assigned_upt_name": { "type": "string", "description": "Assigned UPT Display Name" },
         "account_name": { "type": "string", "description": "Display name of the account/entity" },
         "operator_name": { "type": "string", "description": "Name of the person operating the account" },
-        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "status": { "type": "string", "enum": ["active", "inactive", "pending", "rejected"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -140,7 +140,8 @@
         "isTpaLocked": { "type": "boolean", "description": "Whether the TPA selection is locked for users" },
         "enableWeight": { "type": "boolean", "description": "Global toggle for tonnage/weight feature" },
         "showWeightInForm": { "type": "boolean", "description": "Whether to show tonnage input field in the trip form" },
-        "showVolume": { "type": "boolean", "description": "Whether to show volume input field" }
+        "showVolume": { "type": "boolean", "description": "Whether to show volume input field" },
+        "showReportsForCoAdmin": { "type": "boolean", "description": "Whether to allow co-admins to see and open the Reports menu" }
       }
     },
     "ActivityLog": {
@@ -172,6 +173,23 @@
         "metadata": { "type": "object" }
       },
       "required": ["timestamp", "category", "action", "module", "performedBy", "description"]
+    },
+    "BakungTrip": {
+      "title": "Bakung Landfill Weight Record",
+      "description": "Record of a single vehicle weighing at Bakung landfill scale.",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "time": { "type": "string" },
+        "plate_number": { "type": "string" },
+        "gross_weight_kg": { "type": "number" },
+        "default_empty_weight_kg": { "type": "number" },
+        "net_operational_weight_kg": { "type": "number" },
+        "status": { "type": "string" },
+        "created_by_uid": { "type": "string" },
+        "created_by_role": { "type": "string" }
+      },
+      "required": ["date", "time", "plate_number", "gross_weight_kg", "default_empty_weight_kg", "net_operational_weight_kg", "status", "created_by_uid", "created_by_role"]
     }
   },
   "firestore": {
@@ -210,6 +228,10 @@
     "/activity_logs/{logId}": {
       "schema": "ActivityLog",
       "description": "System activity audit logs."
+    },
+    "/data_sampah_bakung/{recordId}": {
+      "schema": "BakungTrip",
+      "description": "Bakung landfill waste records."
     }
   }
 }

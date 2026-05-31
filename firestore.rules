@@ -22,42 +22,24 @@ service cloud.firestore {
       return isSignedIn() && (verified || isInternal || hasProfile);
     }
 
-    // Comprehensive helper for privileged roles
-    function isAdminOrCoAdmin() {
-      let authEmail = (request.auth != null && request.auth.token != null && request.auth.token.email != null ? request.auth.token.email : "").lower();
-      // Identity check: prioritize root emails
-      let isRoot = authEmail == "bpsdlh@gmail.com" || authEmail == "bpsdlh@ritase.dlh";
-      
-      // Role check from database
-      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      let hasDoc = exists(userDocPath);
-      let dbRole = hasDoc ? get(userDocPath).data.get('role', '') : '';
-      let hasPrivilegedRole = dbRole == 'admin' || dbRole == 'co-admin';
-      
-      return isSignedIn() && (isRoot || hasPrivilegedRole);
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    // Check if user is admin or co-admin
     function isAdmin() {
-      let authEmail = (request.auth != null && request.auth.token != null && request.auth.token.email != null ? request.auth.token.email : "").lower();
-      let isRoot = authEmail == "bpsdlh@gmail.com" || authEmail == "bpsdlh@ritase.dlh";
-      
-      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      let hasAdminDoc = exists(userDocPath);
-      let dbRole = hasAdminDoc ? get(userDocPath).data.get('role', '') : '';
-      
-      return isSignedIn() && (isRoot || dbRole == 'admin');
+      return isSignedIn() && (
+        (request.auth.token != null && request.auth.token.email != null && request.auth.token.email in ['bpsdlh@gmail.com', 'bpsdlh@ritase.dlh']) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'admin')
+      );
     }
 
     function isCoAdmin() {
-      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      let hasDoc = exists(userDocPath);
-      let dbRole = hasDoc ? get(userDocPath).data.get('role', '') : '';
-      
-      return isSignedIn() && dbRole == 'co-admin';
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'co-admin';
     }
 
-    function canManageData() {
-      return isAdminOrCoAdmin();
+    function isAdminOrCoAdmin() {
+      return isAdmin() || isCoAdmin();
     }
 
     function incoming() {
@@ -68,10 +50,6 @@ service cloud.firestore {
       return resource.data;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
     // --- Validation Functions ---
 
     function isValidUser(data) {
@@ -80,170 +58,128 @@ service cloud.firestore {
              data.userId is string && data.userId.size() > 0 &&
              data.username is string && data.username.size() > 0 &&
              data.email is string && data.email.size() > 0 &&
-             data.role in ['admin', 'co-admin', 'user'] &&
+             data.role in ['admin', 'co-admin', 'user', 'viewer', 'operator_bakung'] &&
              data.account_name is string && data.account_name.size() > 0 &&
-             data.status in ['active', 'inactive'] &&
+             data.status in ['active', 'inactive', 'pending', 'rejected'] &&
              (!('operator_name' in data) || data.operator_name is string) &&
-             (!('assigned_upt_id' in data) || data.assigned_upt_id is string) &&
-             (!('assigned_upt_name' in data) || data.assigned_upt_name is string);
+             (!('assigned_upt_id' in data) || data.assigned_upt_id is string || data.assigned_upt_id == null) &&
+             (!('assigned_upt_name' in data) || data.assigned_upt_name is string || data.assigned_upt_name == null);
     }
 
     function isValidTrip(data) {
-      // Basic keys required for any trip
-      let requiredFields = ['date', 'vehiclePlate', 'driverName', 'upt', 'tpa', 'tonnage', 'volume', 'tripCount', 'createdBy', 'timestamp', 'created_by_upt_id', 'created_by_upt_name', 'created_by_user_name', 'created_by_username'];
-      let isUpdate = resource != null;
-      
-      let hasRequired = isUpdate || data.keys().hasAll(requiredFields);
-      
-      return hasRequired && 
-             (isUpdate || (
-               data.date is string &&
-               data.vehiclePlate is string &&
-               data.driverName is string &&
-               data.upt is string &&
-               data.tpa is string &&
-               (data.tonnage is number || data.tonnage is int) &&
-               (data.volume is number || data.volume is int) &&
-               (data.tripCount is int || data.tripCount is number) &&
-               data.created_by_upt_id is string &&
-               data.created_by_upt_name is string &&
-               data.created_by_user_name is string &&
-               data.created_by_username is string
-             )) && (
-               isUpdate ? (
-                 data.createdBy == existing().createdBy &&
-                 data.timestamp == existing().timestamp
-               ) : (
-                 data.createdBy == request.auth.uid &&
-                 data.timestamp == request.time
-               )
-             );
+      return data.keys().hasAll(['date', 'vehiclePlate', 'driverName', 'upt', 'tpa', 'tonnage', 'volume', 'tripCount', 'createdBy', 'timestamp']) &&
+             data.date is string &&
+             data.vehiclePlate is string && data.vehiclePlate.size() <= 20 &&
+             data.driverName is string && data.driverName.size() <= 100 &&
+             data.upt is string &&
+             data.tpa is string &&
+             (data.tonnage is number || data.tonnage is int) &&
+             (data.volume is number || data.volume is int) &&
+             data.tripCount is int &&
+             data.createdBy == request.auth.uid &&
+             (data.timestamp == request.time || data.timestamp == existing().timestamp);
     }
 
     function isValidSettings(data) {
       return data.keys().hasAll(['mainTpaId', 'isTpaLocked']) &&
              data.mainTpaId is string &&
-             data.isTpaLocked is bool &&
-             (!('visualDataRitase' in data) || data.visualDataRitase is bool) &&
-             (!('enableWeight' in data) || data.enableWeight is bool) &&
-             (!('showWeightInForm' in data) || data.showWeightInForm is bool) &&
-             (!('showVolume' in data) || data.showVolume is bool);
-    }
-
-    function isValidActivityLog(data) {
-      let requiredFields = ['timestamp', 'category', 'action', 'module', 'performedBy', 'description'];
-      return data.keys().hasAll(requiredFields) &&
-             data.category in ['login', 'operasional', 'perubahan_data', 'sistem'] &&
-             (data.performedBy is map && data.performedBy.userId == request.auth.uid) &&
-             (data.timestamp == request.time || data.timestamp is timestamp);
-    }
-
-    function isValidTPS(data) {
-      return data.keys().hasAll(['name']) &&
-             data.name is string && data.name.size() <= 200;
-    }
-
-    function isValidVehicle(data) {
-      return data.keys().hasAll(['plateNumber', 'type']) &&
-             data.plateNumber is string && data.plateNumber.size() <= 20 &&
-             data.type is string &&
-             (!('status' in data) || data.status in ['Aktif', 'Tidak Aktif']) &&
-             (!('status_description' in data) || data.status_description is string) &&
-             (!('bbm' in data) || data.bbm is string) &&
-             (!('tahun_pengadaan' in data) || (data.tahun_pengadaan is number || data.tahun_pengadaan is int || data.tahun_pengadaan == null)) &&
-             (!('nomor_rangka' in data) || data.nomor_rangka is string) &&
-             (!('nomor_mesin' in data) || data.nomor_mesin is string) &&
-             (!('upts' in data) || data.upts is list) &&
-             (!('defaultDriverName' in data) || data.defaultDriverName is string) &&
-             (!('ritaseTonnage' in data) || data.ritaseTonnage is map);
-    }
-
-    function isValidDriver(data) {
-      return data.keys().hasAll(['name']) &&
-             data.name is string && data.name.size() <= 100 &&
-             (!('jabatan' in data) || data.jabatan is string) &&
-             (!('status_asn' in data) || data.status_asn is string) &&
-             (!('nip' in data) || (data.nip is string || data.nip == null)) &&
-             (!('phone' in data) || data.phone is string) &&
-             (!('shift' in data) || data.shift is string) &&
-             (!('upts' in data) || data.upts is list) &&
-             (!('vehiclePlate' in data) || data.vehiclePlate is string);
+             data.isTpaLocked is bool;
     }
 
     // --- Match Rules ---
 
     match /users/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || canManageData());
-      allow list: if canManageData();
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdminOrCoAdmin());
+      allow list: if isSignedIn() && isAdminOrCoAdmin();
       
-      allow create: if isSignedIn() && (request.auth.uid == userId || canManageData()) && 
-                    isValidUser(incoming());
+      // Allow a user to create their own initial profile document with role viewer and status pending,
+      // OR allow the master admin bpsdlh@gmail.com to create their active admin profile document.
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming()) && (
+                      (incoming().role == 'viewer' && incoming().status == 'pending') ||
+                      (incoming().email.lower() == 'bpsdlh@gmail.com') ||
+                      (request.auth.token != null && request.auth.token.email != null && request.auth.token.email.lower() == 'bpsdlh@gmail.com')
+                    );
       
-      allow update: if isSignedIn() && (request.auth.uid == userId || canManageData()) && 
-                    isValidUser(incoming()) &&
-                    (incoming().username == existing().username) &&
-                    (canManageData() || (incoming().role == existing().role && incoming().status == existing().status));
-      allow delete: if isAdmin();
+      // Allow user themselves to update non-privileged fields, or admin to change anything.
+      allow update: if isSignedIn() && (
+                      isAdminOrCoAdmin() && isValidUser(incoming())
+                    ) || (
+                      request.auth.uid == userId && isValidUser(incoming()) &&
+                      incoming().role == existing().role &&
+                      incoming().status == existing().status
+                    );
+                    
+      allow delete: if isSignedIn() && isAdmin();
     }
 
     match /upts/{uptId} {
       allow read: if isSignedIn();
-      allow write: if canManageData();
+      allow write: if isSignedIn() && isAdminOrCoAdmin();
     }
 
     match /vehicles/{vehicleId} {
       allow read: if isSignedIn();
-      allow create: if canManageData() && isValidVehicle(incoming());
-      allow update: if canManageData() && isValidVehicle(incoming());
-      allow delete: if isAdminOrCoAdmin();
+      allow write: if isSignedIn() && isAdminOrCoAdmin();
     }
 
     match /drivers/{driverId} {
       allow read: if isSignedIn();
-      allow create: if canManageData() && isValidDriver(incoming());
-      allow update: if canManageData() && isValidDriver(incoming());
-      allow delete: if isAdminOrCoAdmin();
+      allow write: if isSignedIn() && isAdminOrCoAdmin();
     }
 
     match /tpas/{tpaId} {
       allow read: if isSignedIn();
-      allow write: if canManageData();
+      allow write: if isSignedIn() && isAdminOrCoAdmin();
     }
 
     match /tps/{tpsId} {
       allow read: if isSignedIn();
-      allow write: if canManageData();
+      allow write: if isSignedIn() && isAdminOrCoAdmin();
     }
 
     match /settings/{docId} {
       allow read: if isSignedIn();
-      allow write: if canManageData() && isValidSettings(incoming());
+      allow write: if isSignedIn() && isAdminOrCoAdmin() && isValidSettings(incoming());
     }
 
     match /activity_logs/{logId} {
-      allow list: if isAdmin();
-      allow get: if isAdmin();
-      allow create: if isSignedIn() && isValidActivityLog(incoming());
+      allow read: if isSignedIn() && isAdminOrCoAdmin();
+      allow create: if isSignedIn();
       allow update, delete: if false;
     }
 
     match /trips/{tripId} {
       allow read: if isSignedIn();
       
-      allow create: if isVerified() && isValidTrip(incoming()) && (
+      allow create: if isSignedIn() && isValidTrip(incoming()) && (
         isAdminOrCoAdmin() || 
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'user' &&
-         (incoming().upt == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('assigned_upt_name', '') ||
-          incoming().created_by_upt_name == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('assigned_upt_name', '')))
+         getUserData().role == 'user' &&
+         getUserData().status == 'active' &&
+         (incoming().upt == getUserData().assigned_upt_name ||
+          incoming().created_by_upt_name == getUserData().assigned_upt_name))
       );
       
-      // Admin/Co-admin can update trips
-      allow update: if isAdminOrCoAdmin() && isValidTrip(incoming()) && (
+      allow update: if isSignedIn() && isAdminOrCoAdmin() && isValidTrip(incoming()) && (
         incoming().diff(existing()).affectedKeys().hasAny(['tonnage', 'volume', 'tripCount', 'updatedAt', 'syncAt', 'updatedBy', 'timestamp', 'upt', 'tpa', 'driverName', 'vehiclePlate', 'date', 'operationalTime'])
       );
                     
-      allow delete: if isAdminOrCoAdmin();
+      allow delete: if isSignedIn() && isAdminOrCoAdmin();
+    }
+
+    match /data_sampah_bakung/{recordId} {
+      allow create: if isSignedIn() && (
+                      isAdminOrCoAdmin() ||
+                      (
+                        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                        getUserData().role == 'operator_bakung' &&
+                        incoming().created_by_uid == request.auth.uid
+                      )
+                    );
+                    
+      allow read: if isSignedIn();
+                   
+      allow update, delete: if isSignedIn() && isAdminOrCoAdmin();
     }
   }
 }
